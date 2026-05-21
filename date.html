@@ -1,0 +1,65 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>日期報名頁</title>
+  <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <a href="./index.html" class="back-link">← 回日期列表</a>
+      <h1 id="pageTitle">日期報名</h1>
+      <p id="pageSubTitle">請假、額外報名與最終名單都在此頁操作。</p>
+    </header>
+
+    <section class="panel">
+      <h2>固定人員名單（請假）</h2>
+      <p class="note">每位人員每日期僅能送出一次請假，送出後按鈕會鎖定。</p>
+      <div id="memberList" class="member-list" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <h2>額外報名</h2>
+      <form id="extraForm" class="form-grid">
+        <label for="extraName">姓名</label>
+        <input id="extraName" name="extraName" type="text" maxlength="50" required />
+
+        <label for="extraGender">性別</label>
+        <select id="extraGender" name="extraGender" required>
+          <option value="">請選擇</option>
+          <option value="男">男</option>
+          <option value="女">女</option>
+          <option value="其他">其他</option>
+        </select>
+
+        <button id="extraSubmitBtn" class="btn primary" type="submit">送出額外報名</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="row between">
+        <h2>最終人員名單（來自 Google 試算表）</h2>
+        <button id="refreshFinalBtn" class="btn" type="button">刷新名單</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>姓名</th>
+              <th>性別</th>
+              <th>來源</th>
+              <th>狀態</th>
+            </tr>
+          </thead>
+          <tbody id="finalListBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>活動日期選擇</title>
+  <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <h1>活動報名系統</h1>
+      <p>請先選擇日期，再進入當日名單頁面。</p>
+    </header>
+
+    <section class="panel">
+      <h2>快速選擇日期</h2>
+      <div id="dateList" class="date-grid" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <h2>自訂日期</h2>
+      <div class="row gap">
+        <input id="customDate" type="date" />
+        <button id="goDateBtn" class="btn primary" type="button">進入日期頁面</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="./js/app.js"></script>
+</body>
+</html>
