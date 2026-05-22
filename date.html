@@ -8,6 +8,12 @@
 </head>
 <body class="page-date">
   <div class="court-overlay" aria-hidden="true"></div>
+  <div id="globalLoading" class="global-loading" hidden>
+    <div class="loading-panel">
+      <p>載入中...</p>
+      <div class="loading-bar" aria-hidden="true"><span></span></div>
+    </div>
+  </div>
 
   <main class="container">
     <header class="hero">
@@ -19,33 +25,76 @@
 
     <section class="panel panel-media panel-members">
       <h2>固定人員名單（請假）</h2>
-      <p class="note">名單由 Google Sheet 的 `fixed_members` 控制。每位人員每日期僅能送出一次請假。</p>
-      <div id="memberList" class="member-list" aria-live="polite"></div>
+      <p class="note">左男右女，每位人員每日期僅能送出一次請假。</p>
+      <div class="split-two">
+        <div>
+          <h3 class="subhead">男生</h3>
+          <div id="memberListMale" class="member-list" aria-live="polite"></div>
+        </div>
+        <div>
+          <h3 class="subhead">女生</h3>
+          <div id="memberListFemale" class="member-list" aria-live="polite"></div>
+        </div>
+      </div>
     </section>
 
     <section class="panel panel-media panel-extra">
       <h2>額外報名</h2>
       <form id="extraForm" class="form-grid">
-        <label for="extraName">姓名</label>
-        <input id="extraName" name="extraName" type="text" maxlength="50" required />
-
-        <label for="extraGender">性別</label>
-        <select id="extraGender" name="extraGender" required>
-          <option value="">請選擇</option>
-          <option value="男">男</option>
-          <option value="女">女</option>
-          <option value="其他">其他</option>
+        <label for="extraType">補位類型</label>
+        <select id="extraType" required>
+          <option value="MALE">男生 1 位</option>
+          <option value="FEMALE">女生 1 位</option>
+          <option value="PAIR">1 男 1女</option>
         </select>
+
+        <div id="maleField">
+          <label for="maleName">男生姓名</label>
+          <input id="maleName" type="text" maxlength="50" />
+        </div>
+
+        <div id="femaleField">
+          <label for="femaleName">女生姓名</label>
+          <input id="femaleName" type="text" maxlength="50" />
+        </div>
+
+        <label id="pairRuleField" class="checkbox-line"><input id="pairMustTogether" type="checkbox" /> 一男一女需同時補上，否則放棄</label>
+
+        <label for="extraNote">備註</label>
+        <input id="extraNote" type="text" maxlength="120" placeholder="例如：候補、只能 20:00 後到場" />
 
         <button id="extraSubmitBtn" class="btn primary" type="submit">送出額外報名</button>
       </form>
     </section>
 
+    <section class="panel panel-media panel-extra">
+      <div class="row between">
+        <h2>額外報名清單</h2>
+        <button id="refreshExtraBtn" class="btn icon-btn" type="button" title="刷新額外報名">↻</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>類型</th>
+              <th>姓名</th>
+              <th>備註</th>
+            </tr>
+          </thead>
+          <tbody id="extraListBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel panel-media panel-final">
       <div class="row between">
-        <h2>最終人員名單（來自 Google 試算表）</h2>
-        <button id="refreshFinalBtn" class="btn icon-btn" type="button" aria-label="刷新最終名單" title="刷新最終名單">↻</button>
+        <h2>最終人員名單</h2>
+        <div class="row gap">
+          <button id="triggerSettlementBtn" class="btn" type="button">觸發結算</button>
+          <button id="refreshFinalBtn" class="btn icon-btn" type="button" aria-label="刷新最終名單" title="刷新最終名單">↻</button>
+        </div>
       </div>
+      <p id="settlementInfo" class="note"></p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -58,6 +107,7 @@
           <tbody id="finalListBody"></tbody>
         </table>
       </div>
+      <p id="finalSummary" class="final-summary"></p>
     </section>
   </main>
 

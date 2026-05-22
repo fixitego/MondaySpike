@@ -1,101 +1,58 @@
 ﻿# MondaySpike - LIFF Mobile 報名網站
 
-這是一個可部署在 GitHub Pages 的 LIFF 手機版報名網站。
+## 本地測試模式
 
-## 核心特色
+- `js/app.js` 可切換：
+  - `apiMode: "live"`：串 Google Apps Script
+  - `apiMode: "mock"`：不用 Google Sheet，前端假資料即可完整測試版面與流程
 
-- 固定人員名單：由 Google Sheet `fixed_members` 控制
-- 可開放日期清單：由 Google Sheet `available_dates` 控制
-- 首頁快速按鈕 + 自訂日期下拉：都只顯示可用日期
-- 自訂日期只能選清單內日期（前後端都會驗證）
-- 固定名單請假：單次點擊 + 確認彈窗 + 顏色變化
-- 男女固定名單有不同卡片背景樣式，整體字級縮小適配 18 人
-- Banner 全寬 + 自動輪播背景圖 + Title
-- 最終名單刷新按鈕為圖示型（↻）
-- 最終名單只包含：未請假的固定人員 + 額外報名（補位）
+## 後端安全與權限（寫死在 Code）
 
-## 專案檔案
+在 `gas/Code.gs` 可直接改：
 
-- `index.html`：首頁（全寬 banner、日期入口、footer）
-- `date.html`：單一日期作業頁
-- `css/style.css`：排球風格樣式與圖片路徑設定
-- `js/app.js`：前端邏輯（LIFF / API / UI）
-- `gas/Code.gs`：Google Apps Script 後端
-- `assets/images/*.svg`：預設背景圖（可直接替換）
-- `sheet_templates/*.csv`：Google Sheet 範本資料
+- `ALLOW_USER_EDIT`：是否允許使用者送請假/額外報名/取消
+- `ENABLE_MANUAL_SETTLEMENT_TRIGGER`：是否允許手動觸發結算
+- `SETTLEMENT_TRIGGER_TOKEN`：手動觸發結算碼（前端會提示輸入）
 
-## Google Sheet 結構
+## 主要規則
 
-系統會自動建立（若不存在）：
+- 結算前：最終名單只看固定名單（扣掉請假）
+- 結算後：才會套用額外報名補位
+- 最終名單限制：總人數上限 18、女生上限 9
 
-- `available_dates`
-- `fixed_members`
-- `leave_records`
-- `extra_signups`
-- `final_list`
+## 額外報名
 
-### `available_dates` 欄位
+支援三種：
+- `MALE`：男 1
+- `FEMALE`：女 1
+- `PAIR`：一男一女
 
-- `date`：`YYYY-MM-DD`
-- `label`：顯示名稱（例如：本週一）
-- `enabled`：`1` 或 `true` 代表啟用
+欄位：
+- 姓名（依類型動態必填）
+- 備註
+- `pairMustTogether`（一男一女需同進同退，否則放棄）
 
-### `fixed_members` 欄位
+且支援取消：
+- 額外報名列表每筆都有「取消」按鈕
+- 點擊會有確認彈窗
 
-- `memberId`：唯一 ID（例如 `M001`）
-- `memberName`：姓名
-- `gender`：性別
-- `enabled`：`1` 或 `true` 代表啟用
+## 結算控制表
 
-## Sheet 範本（可直接匯入）
+`settlement_control`：
+- `date`
+- `settleAt(YYYY-MM-DD HH:mm)`
+- `settled(0/1)`
+- `settledAt`
+- `triggerNote`
 
-- `sheet_templates/available_dates.csv`
-- `sheet_templates/fixed_members.csv`
+## 前端體驗
 
-## 圖片路徑與位置設定（程式碼內）
+- 跳頁有全螢幕 loading
+- 固定名單男/女左右分欄且縮小
+- 最終名單男/女底色區分
+- 最下方顯示總人數與女生數
+- Banner 固定標題 + 3 張橫向輪播
 
-請改 `css/style.css` 的 `:root` 變數，全部都吃 repo 路徑：
+## 你需要重新部署
 
-```css
---hero-bg-image: url("../assets/images/home-banner.svg");
---hero-bg-position: center top;
-
---panel-dates-bg-image: url("../assets/images/panel-dates.svg");
---panel-dates-bg-position: center center;
---panel-custom-bg-image: url("../assets/images/panel-custom.svg");
---panel-custom-bg-position: right center;
---panel-members-bg-image: url("../assets/images/panel-members.svg");
---panel-members-bg-position: center top;
---panel-extra-bg-image: url("../assets/images/panel-extra.svg");
---panel-extra-bg-position: center center;
---panel-final-bg-image: url("../assets/images/panel-final.svg");
---panel-final-bg-position: center center;
---footer-bg-image: url("../assets/images/footer-bg.svg");
---footer-bg-position: center center;
-```
-
-## 部署步驟
-
-1. 建立 Google 試算表，記下 `Spreadsheet ID`。
-2. 開啟 Google Apps Script，貼上 `gas/Code.gs`。
-3. 將 `Code.gs` 的 `SHEET_ID` 改成你的試算表 ID。
-4. 部署 Apps Script 為 Web App：
-   - Execute as: `Me`
-   - Who has access: `Anyone`
-5. 取得 Web App URL（通常結尾為 `/exec`）。
-6. 修改 `js/app.js`：
-   - `APP_CONFIG.apiBaseUrl = "你的 GAS Web App URL"`
-   - `APP_CONFIG.liffId = "你的 LIFF ID"`
-7. 將專案 push 到 GitHub，並在 GitHub Pages 啟用此 repo。
-
-## 本機預覽
-
-- `npm run dev`：開啟 `http://127.0.0.1:5500`
-- `npm run dev:host`：給同網段手機測試（電腦 IP + `:5500`）
-
-## 注意事項
-
-- 前端 `localStorage` 會限制「同日期同人員」單次請假按鈕。
-- 後端 `leave_records` 也會做重複防護。
-- 若 `available_dates` 沒有該日期，前端頁面與後端 API 都會拒絕寫入。
-- 目前提供的是「排球感」原創視覺底圖，不含官方版權角色素材。
+`gas/Code.gs` 已更新 API 與資料欄位，請重新部署 Apps Script Web App。

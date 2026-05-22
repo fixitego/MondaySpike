@@ -8,29 +8,27 @@
 </head>
 <body class="page-home">
   <div class="court-overlay" aria-hidden="true"></div>
+  <div id="globalLoading" class="global-loading" hidden>
+    <div class="loading-panel">
+      <p>載入中...</p>
+      <div class="loading-bar" aria-hidden="true"><span></span></div>
+    </div>
+  </div>
 
   <header class="hero hero-banner full-bleed">
     <div class="hero-inner container">
-      <div class="hero-slider" aria-hidden="true">
-        <div class="hero-slide slide-1"></div>
-        <div class="hero-slide slide-2"></div>
-        <div class="hero-slide slide-3"></div>
+      <h1 class="hero-fixed-title">MONDAY SPIKE 排球團練報名</h1>
+      <div class="hero-track" aria-hidden="true">
+        <img src="./assets/images/home-banner.svg" alt="" />
+        <img src="./assets/images/home-banner-2.svg" alt="" />
+        <img src="./assets/images/home-banner-3.svg" alt="" />
       </div>
-      <div class="hero-copy">
-        <p class="kicker">MONDAY SPIKE</p>
-        <h1>排球團練報名系統</h1>
-        <p>日期與固定名單由 Google Sheet 控制，手機上可直接完成請假與報名。</p>
-      </div>
-      <div class="hero-badge" aria-hidden="true">VOLLEYBALL</div>
     </div>
   </header>
 
   <main class="container">
-
     <section class="panel panel-media panel-dates">
-      <div class="row between">
-        <h2>快速選擇日期</h2>
-      </div>
+      <h2>快速選擇日期</h2>
       <p class="note">以下按鈕來自 Google Sheet 的 `available_dates`。</p>
       <div id="dateList" class="date-grid" aria-live="polite"></div>
     </section>
@@ -42,7 +40,6 @@
         <button id="goDateBtn" class="btn primary" type="button">進入日期頁面</button>
       </div>
     </section>
-
   </main>
 
   <footer class="site-footer">
