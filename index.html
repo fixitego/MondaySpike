@@ -11,6 +11,11 @@
 
   <header class="hero hero-banner full-bleed">
     <div class="hero-inner container">
+      <div class="hero-slider" aria-hidden="true">
+        <div class="hero-slide slide-1"></div>
+        <div class="hero-slide slide-2"></div>
+        <div class="hero-slide slide-3"></div>
+      </div>
       <div class="hero-copy">
         <p class="kicker">MONDAY SPIKE</p>
         <h1>排球團練報名系統</h1>
@@ -25,7 +30,6 @@
     <section class="panel panel-media panel-dates">
       <div class="row between">
         <h2>快速選擇日期</h2>
-        <button id="reloadConfigBtn" class="btn" type="button">重新讀取設定</button>
       </div>
       <p class="note">以下按鈕來自 Google Sheet 的 `available_dates`。</p>
       <div id="dateList" class="date-grid" aria-live="polite"></div>

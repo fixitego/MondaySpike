@@ -1,6 +1,6 @@
 ﻿const APP_CONFIG = {
   liffId: "2010159498-6XQaB49g",
-  apiBaseUrl: "https://script.google.com/macros/s/AKfycbw8OQvzh3a4ZlokJsAFeW9XPdRKKibYOxq4dR6unOw7elkM1zjAwW1l4sk0_fPhowYW/exec"
+  apiBaseUrl: "https://script.google.com/macros/s/AKfycbyBLPUsixdYeJszFMsoiGxxz2HsHBJgzu2KILEZyXatqTqW-5NFpSugOybPQPTQRHvg/exec"
 };
 
 const STORAGE_PREFIX = "leave_sent";
@@ -32,22 +32,7 @@ function isDatePage() {
 }
 
 async function initIndexPage() {
-  const reloadBtn = document.getElementById("reloadConfigBtn");
   const goDateBtn = document.getElementById("goDateBtn");
-
-  reloadBtn.addEventListener("click", async () => {
-    reloadBtn.disabled = true;
-    reloadBtn.textContent = "讀取中...";
-    try {
-      await loadControlConfig(true);
-      renderIndexDateControls();
-    } catch (error) {
-      alert(`讀取設定失敗：${error.message}`);
-    } finally {
-      reloadBtn.disabled = false;
-      reloadBtn.textContent = "重新讀取設定";
-    }
-  });
 
   goDateBtn.addEventListener("click", () => {
     const selected = getSelectedCustomDate();
@@ -204,11 +189,12 @@ function renderFixedMembers(date) {
       const key = leaveStorageKey(date, member.id);
       const sent = localStorage.getItem(key) === "1";
       const itemClass = sent ? "member-item leave" : "member-item";
+      const genderClass = getGenderClass(member.gender);
       const statusText = sent ? "已送出請假" : "尚未請假";
       const btnText = sent ? "已送出" : "請假";
 
       return `
-      <div class="${itemClass}" id="row-${member.id}">
+      <div class="${itemClass} ${genderClass}" id="row-${member.id}">
         <div class="member-left">
           <span class="member-name">${escapeHtml(member.name)}</span>
           <span class="member-meta">${escapeHtml(member.id)} / ${escapeHtml(member.gender)}</span>
@@ -325,26 +311,26 @@ function bindRefreshFinalList(date) {
   const btn = document.getElementById("refreshFinalBtn");
   btn.addEventListener("click", async () => {
     btn.disabled = true;
-    btn.textContent = "刷新中...";
+    btn.classList.add("is-loading");
     try {
       await loadFinalList(date);
     } finally {
       btn.disabled = false;
-      btn.textContent = "刷新名單";
+      btn.classList.remove("is-loading");
     }
   });
 }
 
 async function loadFinalList(date) {
   const tbody = document.getElementById("finalListBody");
-  tbody.innerHTML = `<tr><td colspan="4">載入中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="3">載入中...</td></tr>`;
 
   try {
     const data = await callApi({ action: "final_list", date });
     const records = Array.isArray(data.records) ? data.records : [];
 
     if (!records.length) {
-      tbody.innerHTML = `<tr><td colspan="4">目前沒有資料</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="3">目前沒有資料</td></tr>`;
       return;
     }
 
@@ -355,12 +341,11 @@ async function loadFinalList(date) {
         <td>${escapeHtml(r.name || "")}</td>
         <td>${escapeHtml(r.gender || "")}</td>
         <td>${escapeHtml(r.source || "")}</td>
-        <td>${escapeHtml(r.status || "")}</td>
       </tr>`
       )
       .join("");
   } catch (error) {
-    tbody.innerHTML = `<tr><td colspan="4">載入失敗：${escapeHtml(error.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3">載入失敗：${escapeHtml(error.message)}</td></tr>`;
   }
 }
 
@@ -477,6 +462,17 @@ function leaveStorageKey(date, memberId) {
 
 function isValidIsoDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function getGenderClass(genderText) {
+  const raw = String(genderText || "").trim();
+  if (raw === "男") {
+    return "male";
+  }
+  if (raw === "女") {
+    return "female";
+  }
+  return "";
 }
 
 function escapeHtml(value) {

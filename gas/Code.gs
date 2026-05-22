@@ -1,4 +1,4 @@
-﻿const SHEET_ID = 'YOUR_GOOGLE_SHEET_ID';
+﻿const SHEET_ID = '1HHUSk0IVPYUAymvkALV2sDZEhVK2pkk89zBfE38gkvo';
 const DATES_SHEET = 'available_dates';
 const MEMBERS_SHEET = 'fixed_members';
 const LEAVE_SHEET = 'leave_records';
@@ -26,6 +26,7 @@ function doGet(e) {
       const date = normalize(e.parameter.date);
       if (date) {
         validateDateIsAvailable(date);
+        rebuildFinalListForDate(date);
       }
       const records = getFinalListByDate(date);
       return jsonOutput({ ok: true, records: records });
@@ -129,7 +130,6 @@ function saveExtraSignup(payload) {
     name,
     gender,
     '額外報名',
-    '報名',
     new Date()
   ]);
 }
@@ -157,39 +157,51 @@ function rebuildFinalListForDate(date) {
     leaveSet[normalize(leaveRow[1])] = true;
   }
 
-  var filtered = [finalRows[0] || ['date', 'name', 'gender', 'source', 'status']];
+  var filtered = [finalRows[0] || ['date', 'name', 'gender', 'source']];
   for (var j = 1; j < finalRows.length; j += 1) {
     if (normalize(finalRows[j][0]) !== date) {
-      filtered.push(finalRows[j]);
+      filtered.push(finalRows[j].slice(0, 4));
     }
   }
 
+  var availableFixed = [];
   for (var k = 0; k < fixedMembers.length; k += 1) {
     var member = fixedMembers[k];
-    var isLeave = !!leaveSet[normalize(member.memberId)];
-    filtered.push([
-      date,
-      member.name,
-      member.gender,
-      '固定名單',
-      isLeave ? '請假' : '報名'
-    ]);
+    if (!leaveSet[normalize(member.memberId)]) {
+      availableFixed.push([
+        date,
+        member.name,
+        member.gender,
+        '固定名單'
+      ]);
+    }
   }
 
+  var extraCandidates = [];
   for (var m = 1; m < extraRows.length; m += 1) {
     var extraRow = extraRows[m];
     if (normalize(extraRow[0]) !== date) continue;
-    filtered.push([
+    extraCandidates.push([
       normalize(extraRow[0]),
       normalize(extraRow[1]),
       normalize(extraRow[2]),
-      '額外報名',
-      '報名'
+      '額外報名'
     ]);
   }
 
+  var targetCount = fixedMembers.length;
+  var neededExtra = targetCount - availableFixed.length;
+  if (neededExtra < 0) {
+    neededExtra = 0;
+  }
+
+  filtered = filtered.concat(availableFixed);
+  if (neededExtra > 0) {
+    filtered = filtered.concat(extraCandidates.slice(0, neededExtra));
+  }
+
   finalSheet.clearContents();
-  finalSheet.getRange(1, 1, filtered.length, 5).setValues(filtered);
+  finalSheet.getRange(1, 1, filtered.length, 4).setValues(filtered);
 }
 
 function getFinalListByDate(date) {
@@ -210,8 +222,7 @@ function getFinalListByDate(date) {
       date: rowDate,
       name: normalize(row[1]),
       gender: normalize(row[2]),
-      source: normalize(row[3]),
-      status: normalize(row[4])
+      source: normalize(row[3])
     });
   }
   return result;
@@ -310,8 +321,8 @@ function bootstrapSheets() {
   ]);
 
   ensureSheet(LEAVE_SHEET, ['date', 'memberId', 'memberName', 'gender', 'status', 'createdAt']);
-  ensureSheet(EXTRA_SHEET, ['date', 'name', 'gender', 'source', 'status', 'createdAt']);
-  ensureSheet(FINAL_SHEET, ['date', 'name', 'gender', 'source', 'status']);
+  ensureSheet(EXTRA_SHEET, ['date', 'name', 'gender', 'source', 'createdAt']);
+  ensureSheet(FINAL_SHEET, ['date', 'name', 'gender', 'source']);
 }
 
 function ensureSheet(name, headers, seedRows) {

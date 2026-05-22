@@ -103,6 +103,55 @@ body {
   min-height: 188px;
   padding-top: 20px;
   padding-bottom: 20px;
+  overflow: hidden;
+}
+
+.hero-slider {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.hero-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center center;
+  opacity: 0;
+  animation: heroFade 18s infinite;
+}
+
+.hero-slide.slide-1 {
+  background-image: var(--hero-bg-image), linear-gradient(120deg, #1e2334, #10131e);
+  animation-delay: 0s;
+}
+
+.hero-slide.slide-2 {
+  background-image: url("../assets/images/home-banner-2.svg"), linear-gradient(120deg, #1e2334, #10131e);
+  animation-delay: 6s;
+}
+
+.hero-slide.slide-3 {
+  background-image: url("../assets/images/home-banner-3.svg"), linear-gradient(120deg, #1e2334, #10131e);
+  animation-delay: 12s;
+}
+
+@keyframes heroFade {
+  0% {
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  30% {
+    opacity: 1;
+  }
+  38% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .hero-banner::after {
@@ -237,17 +286,17 @@ body {
 
 .date-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
 }
 
 .date-card {
   border: 1px solid rgba(255, 255, 255, 0.26);
   background: linear-gradient(155deg, rgba(42, 48, 70, 0.92), rgba(23, 27, 42, 0.95));
-  padding: 10px;
+  padding: 8px;
   border-radius: 12px;
   color: #fff;
-  font-weight: 700;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
   width: 100%;
@@ -263,9 +312,9 @@ body {
 
 .date-card small {
   display: block;
-  margin-top: 2px;
+  margin-top: 1px;
   color: var(--accent-sand);
-  font-size: 0.78rem;
+  font-size: 0.7rem;
 }
 
 .row {
@@ -365,25 +414,40 @@ select {
 .member-left {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .member-name {
   font-weight: 700;
+  font-size: 0.9rem;
 }
 
 .member-meta {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   color: #b4bfd9;
 }
 
 .member-status {
-  font-size: 0.9rem;
+  font-size: 0.76rem;
   color: #d6deee;
 }
 
 .member-item.leave .member-status {
   color: #ffd3d3;
+}
+
+.member-item.male {
+  border-color: rgba(95, 198, 255, 0.45);
+  background:
+    linear-gradient(140deg, rgba(32, 64, 95, 0.56), rgba(19, 31, 53, 0.68)),
+    var(--panel-soft);
+}
+
+.member-item.female {
+  border-color: rgba(255, 170, 205, 0.45);
+  background:
+    linear-gradient(140deg, rgba(84, 38, 66, 0.56), rgba(54, 24, 43, 0.68)),
+    var(--panel-soft);
 }
 
 .form-grid {
@@ -442,6 +506,30 @@ thead {
 
 .site-footer p {
   margin: 0;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+.icon-btn.is-loading {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 760px) {
