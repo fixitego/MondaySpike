@@ -1,4 +1,4 @@
-﻿const SHEET_ID = 'YOUR_GOOGLE_SHEET_ID';
+﻿const SHEET_ID = '1HHUSk0IVPYUAymvkALV2sDZEhVK2pkk89zBfE38gkvo';
 const DATES_SHEET = 'available_dates';
 const MEMBERS_SHEET = 'fixed_members';
 const LEAVE_SHEET = 'leave_records';
@@ -12,7 +12,7 @@ const FEMALE_LIMIT = 9;
 // 安全控制（寫死在程式）
 const ALLOW_USER_EDIT = true;
 const ENABLE_MANUAL_SETTLEMENT_TRIGGER = true;
-const SETTLEMENT_TRIGGER_TOKEN = 'fixitego';
+const SETTLEMENT_TRIGGER_TOKEN = '123456';
 
 function doGet(e) {
   try {

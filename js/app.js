@@ -1,7 +1,7 @@
 ﻿const APP_CONFIG = {
-  liffId: "YOUR_LIFF_ID",
-  apiBaseUrl: "YOUR_GAS_WEBAPP_URL",
-  apiMode: "mock", // live | mock
+  liffId: "2010159498-6XQaB49g",
+  apiBaseUrl: "https://script.google.com/macros/s/AKfycbx7N0LYvdeMMWGsKcPbVyJsvoymjOzWs4wkPg5FZUR0q4JaVg6NNMTG1clWMtJeJ0gw/exec",
+  apiMode: "live", // live | mock
   settlementTriggerToken: "CHANGE_ME_STRONG_TOKEN"
 };
 
