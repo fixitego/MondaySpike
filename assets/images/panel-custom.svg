@@ -1,0 +1,5 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500" preserveAspectRatio="xMidYMid slice">
+  <rect width="1200" height="500" fill="#20273a"/>
+  <path d="M720 40 L1200 40 L1200 380 L860 380 Z" fill="#f47c20" fill-opacity="0.26"/>
+  <path d="M0 350 L500 180 L620 210 L120 420 Z" fill="#5fc6ff" fill-opacity="0.16"/>
+</svg>

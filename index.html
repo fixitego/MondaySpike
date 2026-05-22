@@ -3,29 +3,48 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>活動日期選擇</title>
+  <title>Monday Spike | 日期入口</title>
   <link rel="stylesheet" href="./css/style.css" />
 </head>
-<body>
-  <main class="container">
-    <header class="hero">
-      <h1>活動報名系統</h1>
-      <p>請先選擇日期，再進入當日名單頁面。</p>
-    </header>
+<body class="page-home">
+  <div class="court-overlay" aria-hidden="true"></div>
 
-    <section class="panel">
-      <h2>快速選擇日期</h2>
+  <header class="hero hero-banner full-bleed">
+    <div class="hero-inner container">
+      <div class="hero-copy">
+        <p class="kicker">MONDAY SPIKE</p>
+        <h1>排球團練報名系統</h1>
+        <p>日期與固定名單由 Google Sheet 控制，手機上可直接完成請假與報名。</p>
+      </div>
+      <div class="hero-badge" aria-hidden="true">VOLLEYBALL</div>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <section class="panel panel-media panel-dates">
+      <div class="row between">
+        <h2>快速選擇日期</h2>
+        <button id="reloadConfigBtn" class="btn" type="button">重新讀取設定</button>
+      </div>
+      <p class="note">以下按鈕來自 Google Sheet 的 `available_dates`。</p>
       <div id="dateList" class="date-grid" aria-live="polite"></div>
     </section>
 
-    <section class="panel">
-      <h2>自訂日期</h2>
-      <div class="row gap">
-        <input id="customDate" type="date" />
+    <section class="panel panel-media panel-custom">
+      <h2>自訂日期（限清單內）</h2>
+      <div class="row gap stack-mobile">
+        <select id="customDateSelect" aria-label="選擇可用日期"></select>
         <button id="goDateBtn" class="btn primary" type="button">進入日期頁面</button>
       </div>
     </section>
+
   </main>
+
+  <footer class="site-footer">
+    <p>Monday Spike Club</p>
+    <p>Powered by LIFF + Google Sheets</p>
+  </footer>
 
   <script src="./js/app.js"></script>
 </body>

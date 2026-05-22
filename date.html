@@ -3,24 +3,27 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>日期報名頁</title>
+  <title>Monday Spike | 日期頁</title>
   <link rel="stylesheet" href="./css/style.css" />
 </head>
-<body>
+<body class="page-date">
+  <div class="court-overlay" aria-hidden="true"></div>
+
   <main class="container">
     <header class="hero">
       <a href="./index.html" class="back-link">← 回日期列表</a>
       <h1 id="pageTitle">日期報名</h1>
       <p id="pageSubTitle">請假、額外報名與最終名單都在此頁操作。</p>
+      <p id="pageError" class="error-text" hidden></p>
     </header>
 
-    <section class="panel">
+    <section class="panel panel-media panel-members">
       <h2>固定人員名單（請假）</h2>
-      <p class="note">每位人員每日期僅能送出一次請假，送出後按鈕會鎖定。</p>
+      <p class="note">名單由 Google Sheet 的 `fixed_members` 控制。每位人員每日期僅能送出一次請假。</p>
       <div id="memberList" class="member-list" aria-live="polite"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel panel-media panel-extra">
       <h2>額外報名</h2>
       <form id="extraForm" class="form-grid">
         <label for="extraName">姓名</label>
@@ -38,7 +41,7 @@
       </form>
     </section>
 
-    <section class="panel">
+    <section class="panel panel-media panel-final">
       <div class="row between">
         <h2>最終人員名單（來自 Google 試算表）</h2>
         <button id="refreshFinalBtn" class="btn" type="button">刷新名單</button>
@@ -58,6 +61,11 @@
       </div>
     </section>
   </main>
+
+  <footer class="site-footer">
+    <p>Monday Spike Club</p>
+    <p>Today we connect. Tomorrow we fly.</p>
+  </footer>
 
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="./js/app.js"></script>

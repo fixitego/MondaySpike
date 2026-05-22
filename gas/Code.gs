@@ -1,39 +1,45 @@
 ﻿const SHEET_ID = 'YOUR_GOOGLE_SHEET_ID';
+const DATES_SHEET = 'available_dates';
+const MEMBERS_SHEET = 'fixed_members';
 const LEAVE_SHEET = 'leave_records';
 const EXTRA_SHEET = 'extra_signups';
 const FINAL_SHEET = 'final_list';
-const FIXED_MEMBERS = [
-  { memberId: 'M001', name: '王小明', gender: '男' },
-  { memberId: 'M002', name: '林小美', gender: '女' },
-  { memberId: 'M003', name: '陳大華', gender: '男' },
-  { memberId: 'M004', name: '李佳玲', gender: '女' },
-  { memberId: 'M005', name: '吳志強', gender: '男' },
-  { memberId: 'M006', name: '蔡佩君', gender: '女' }
-];
 
 function doGet(e) {
   try {
-    const action = (e.parameter.action || '').trim();
+    bootstrapSheets();
 
+    const action = normalize(e.parameter.action);
     if (!action) {
       return jsonOutput({ ok: false, message: 'missing action' });
     }
 
+    if (action === 'config') {
+      return jsonOutput({
+        ok: true,
+        availableDates: getAvailableDates(),
+        fixedMembers: getFixedMembers()
+      });
+    }
+
     if (action === 'final_list') {
-      const date = (e.parameter.date || '').trim();
+      const date = normalize(e.parameter.date);
+      if (date) {
+        validateDateIsAvailable(date);
+      }
       const records = getFinalListByDate(date);
       return jsonOutput({ ok: true, records: records });
     }
 
     if (action === 'leave') {
       saveLeave(e.parameter);
-      rebuildFinalListForDate(e.parameter.date);
+      rebuildFinalListForDate(normalize(e.parameter.date));
       return jsonOutput({ ok: true });
     }
 
     if (action === 'extra_signup') {
       saveExtraSignup(e.parameter);
-      rebuildFinalListForDate(e.parameter.date);
+      rebuildFinalListForDate(normalize(e.parameter.date));
       return jsonOutput({ ok: true });
     }
 
@@ -45,8 +51,10 @@ function doGet(e) {
 
 function doPost(e) {
   try {
+    bootstrapSheets();
+
     const payload = JSON.parse(e.postData.contents || '{}');
-    const action = (payload.action || '').trim();
+    const action = normalize(payload.action);
 
     if (!action) {
       return jsonOutput({ ok: false, message: 'missing action' });
@@ -54,13 +62,13 @@ function doPost(e) {
 
     if (action === 'leave') {
       saveLeave(payload);
-      rebuildFinalListForDate(payload.date);
+      rebuildFinalListForDate(normalize(payload.date));
       return jsonOutput({ ok: true });
     }
 
     if (action === 'extra_signup') {
       saveExtraSignup(payload);
-      rebuildFinalListForDate(payload.date);
+      rebuildFinalListForDate(normalize(payload.date));
       return jsonOutput({ ok: true });
     }
 
@@ -71,20 +79,23 @@ function doPost(e) {
 }
 
 function saveLeave(payload) {
-  const date = String(payload.date || '').trim();
-  const memberId = String(payload.memberId || '').trim();
-  const memberName = String(payload.memberName || '').trim();
-  const gender = String(payload.gender || '').trim();
+  const date = normalize(payload.date);
+  const memberId = normalize(payload.memberId);
+  const memberName = normalize(payload.memberName);
+  const gender = normalize(payload.gender);
 
   if (!date || !memberId || !memberName) {
     throw new Error('invalid leave payload');
   }
 
+  validateDateIsAvailable(date);
+  validateMemberExists(memberId);
+
   const sheet = getSheet(LEAVE_SHEET);
-  const all = sheet.getDataRange().getValues();
+  const all = sheet.getDataRange().getDisplayValues();
   const duplicate = all.some(function (row, i) {
     if (i === 0) return false;
-    return String(row[0]) === date && String(row[1]) === memberId;
+    return normalize(row[0]) === date && normalize(row[1]) === memberId;
   });
 
   if (duplicate) {
@@ -102,13 +113,15 @@ function saveLeave(payload) {
 }
 
 function saveExtraSignup(payload) {
-  const date = String(payload.date || '').trim();
-  const name = String(payload.name || '').trim();
-  const gender = String(payload.gender || '').trim();
+  const date = normalize(payload.date);
+  const name = normalize(payload.name);
+  const gender = normalize(payload.gender);
 
   if (!date || !name || !gender) {
     throw new Error('invalid extra_signup payload');
   }
+
+  validateDateIsAvailable(date);
 
   const sheet = getSheet(EXTRA_SHEET);
   sheet.appendRow([
@@ -122,33 +135,38 @@ function saveExtraSignup(payload) {
 }
 
 function rebuildFinalListForDate(date) {
-  if (!date) return;
+  if (!date) {
+    return;
+  }
 
+  validateDateIsAvailable(date);
+
+  const fixedMembers = getFixedMembers();
   const leaveSheet = getSheet(LEAVE_SHEET);
   const extraSheet = getSheet(EXTRA_SHEET);
   const finalSheet = getSheet(FINAL_SHEET);
 
-  const leaveRows = leaveSheet.getDataRange().getValues();
-  const extraRows = extraSheet.getDataRange().getValues();
-  const finalRows = finalSheet.getDataRange().getValues();
+  const leaveRows = leaveSheet.getDataRange().getDisplayValues();
+  const extraRows = extraSheet.getDataRange().getDisplayValues();
+  const finalRows = finalSheet.getDataRange().getDisplayValues();
 
   const leaveSet = {};
   for (var i = 1; i < leaveRows.length; i += 1) {
     var leaveRow = leaveRows[i];
-    if (String(leaveRow[0]) !== date) continue;
-    leaveSet[String(leaveRow[1])] = true;
+    if (normalize(leaveRow[0]) !== date) continue;
+    leaveSet[normalize(leaveRow[1])] = true;
   }
 
   var filtered = [finalRows[0] || ['date', 'name', 'gender', 'source', 'status']];
   for (var j = 1; j < finalRows.length; j += 1) {
-    if (String(finalRows[j][0]) !== date) {
+    if (normalize(finalRows[j][0]) !== date) {
       filtered.push(finalRows[j]);
     }
   }
 
-  for (var k = 0; k < FIXED_MEMBERS.length; k += 1) {
-    var member = FIXED_MEMBERS[k];
-    var isLeave = !!leaveSet[member.memberId];
+  for (var k = 0; k < fixedMembers.length; k += 1) {
+    var member = fixedMembers[k];
+    var isLeave = !!leaveSet[normalize(member.memberId)];
     filtered.push([
       date,
       member.name,
@@ -160,11 +178,11 @@ function rebuildFinalListForDate(date) {
 
   for (var m = 1; m < extraRows.length; m += 1) {
     var extraRow = extraRows[m];
-    if (String(extraRow[0]) !== date) continue;
+    if (normalize(extraRow[0]) !== date) continue;
     filtered.push([
-      extraRow[0],
-      extraRow[1],
-      extraRow[2],
+      normalize(extraRow[0]),
+      normalize(extraRow[1]),
+      normalize(extraRow[2]),
       '額外報名',
       '報名'
     ]);
@@ -176,22 +194,149 @@ function rebuildFinalListForDate(date) {
 
 function getFinalListByDate(date) {
   const sheet = getSheet(FINAL_SHEET);
-  const rows = sheet.getDataRange().getValues();
+  var rows = sheet.getDataRange().getDisplayValues();
+
+  if (date && !hasFinalDateRows(rows, date)) {
+    rebuildFinalListForDate(date);
+    rows = sheet.getDataRange().getDisplayValues();
+  }
 
   const result = [];
   for (var i = 1; i < rows.length; i += 1) {
     var row = rows[i];
-    if (date && String(row[0]) !== date) continue;
+    var rowDate = normalize(row[0]);
+    if (date && rowDate !== date) continue;
     result.push({
-      date: String(row[0] || ''),
-      name: String(row[1] || ''),
-      gender: String(row[2] || ''),
-      source: String(row[3] || ''),
-      status: String(row[4] || '')
+      date: rowDate,
+      name: normalize(row[1]),
+      gender: normalize(row[2]),
+      source: normalize(row[3]),
+      status: normalize(row[4])
+    });
+  }
+  return result;
+}
+
+function hasFinalDateRows(rows, date) {
+  for (var i = 1; i < rows.length; i += 1) {
+    if (normalize(rows[i][0]) === date) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getAvailableDates() {
+  const rows = getSheet(DATES_SHEET).getDataRange().getDisplayValues();
+  const result = [];
+
+  for (var i = 1; i < rows.length; i += 1) {
+    var date = normalize(rows[i][0]);
+    var label = normalize(rows[i][1]);
+    var enabled = normalize(rows[i][2]).toLowerCase();
+
+    if (!isIsoDate(date)) continue;
+    if (enabled && enabled !== '1' && enabled !== 'true' && enabled !== 'yes' && enabled !== 'y') continue;
+
+    result.push({
+      date: date,
+      label: label || date
     });
   }
 
   return result;
+}
+
+function getFixedMembers() {
+  const rows = getSheet(MEMBERS_SHEET).getDataRange().getDisplayValues();
+  const result = [];
+
+  for (var i = 1; i < rows.length; i += 1) {
+    var memberId = normalize(rows[i][0]);
+    var name = normalize(rows[i][1]);
+    var gender = normalize(rows[i][2]);
+    var enabled = normalize(rows[i][3]).toLowerCase();
+
+    if (!memberId || !name) continue;
+    if (enabled && enabled !== '1' && enabled !== 'true' && enabled !== 'yes' && enabled !== 'y') continue;
+
+    result.push({
+      memberId: memberId,
+      name: name,
+      gender: gender || '未填'
+    });
+  }
+
+  return result;
+}
+
+function validateDateIsAvailable(date) {
+  const dates = getAvailableDates();
+  var found = false;
+  for (var i = 0; i < dates.length; i += 1) {
+    if (dates[i].date === date) {
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    throw new Error('date is not available: ' + date);
+  }
+}
+
+function validateMemberExists(memberId) {
+  const members = getFixedMembers();
+  var found = false;
+  for (var i = 0; i < members.length; i += 1) {
+    if (normalize(members[i].memberId) === memberId) {
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    throw new Error('member not found in fixed_members: ' + memberId);
+  }
+}
+
+function bootstrapSheets() {
+  ensureSheet(DATES_SHEET, ['date', 'label', 'enabled'], [
+    [todayPlus(0), '本週一', '1'],
+    [todayPlus(7), '下週一', '1']
+  ]);
+
+  ensureSheet(MEMBERS_SHEET, ['memberId', 'memberName', 'gender', 'enabled'], [
+    ['M001', '王小明', '男', '1'],
+    ['M002', '林小美', '女', '1']
+  ]);
+
+  ensureSheet(LEAVE_SHEET, ['date', 'memberId', 'memberName', 'gender', 'status', 'createdAt']);
+  ensureSheet(EXTRA_SHEET, ['date', 'name', 'gender', 'source', 'status', 'createdAt']);
+  ensureSheet(FINAL_SHEET, ['date', 'name', 'gender', 'source', 'status']);
+}
+
+function ensureSheet(name, headers, seedRows) {
+  const sheet = getSheet(name);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(headers);
+    if (seedRows && seedRows.length) {
+      sheet.getRange(2, 1, seedRows.length, headers.length).setValues(seedRows);
+    }
+    return;
+  }
+
+  const currentHeader = sheet.getRange(1, 1, 1, headers.length).getDisplayValues()[0];
+  var missing = false;
+  for (var i = 0; i < headers.length; i += 1) {
+    if (normalize(currentHeader[i]) !== normalize(headers[i])) {
+      missing = true;
+      break;
+    }
+  }
+
+  if (missing) {
+    sheet.insertRowBefore(1);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
 }
 
 function getSheet(name) {
@@ -200,20 +345,22 @@ function getSheet(name) {
   if (!sheet) {
     sheet = ss.insertSheet(name);
   }
-
-  if (sheet.getLastRow() === 0) {
-    if (name === LEAVE_SHEET) {
-      sheet.appendRow(['date', 'memberId', 'memberName', 'gender', 'status', 'createdAt']);
-    }
-    if (name === EXTRA_SHEET) {
-      sheet.appendRow(['date', 'name', 'gender', 'source', 'status', 'createdAt']);
-    }
-    if (name === FINAL_SHEET) {
-      sheet.appendRow(['date', 'name', 'gender', 'source', 'status']);
-    }
-  }
-
   return sheet;
+}
+
+function todayPlus(days) {
+  const tz = Session.getScriptTimeZone() || 'Asia/Taipei';
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return Utilities.formatDate(date, tz, 'yyyy-MM-dd');
+}
+
+function normalize(value) {
+  return String(value == null ? '' : value).trim();
+}
+
+function isIsoDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function jsonOutput(obj) {

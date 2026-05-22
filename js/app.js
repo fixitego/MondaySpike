@@ -1,29 +1,25 @@
 ﻿const APP_CONFIG = {
-  liffId: "YOUR_LIFF_ID",
-  // 將此網址改成你部署好的 Google Apps Script Web App URL
-  apiBaseUrl: "YOUR_GAS_WEBAPP_URL",
-  fixedMembers: [
-    { id: "M001", name: "王小明", gender: "男" },
-    { id: "M002", name: "林小美", gender: "女" },
-    { id: "M003", name: "陳大華", gender: "男" },
-    { id: "M004", name: "李佳玲", gender: "女" },
-    { id: "M005", name: "吳志強", gender: "男" },
-    { id: "M006", name: "蔡佩君", gender: "女" }
-  ]
+  liffId: "2010159498-6XQaB49g",
+  apiBaseUrl: "https://script.google.com/macros/s/AKfycbw8OQvzh3a4ZlokJsAFeW9XPdRKKibYOxq4dR6unOw7elkM1zjAwW1l4sk0_fPhowYW/exec"
 };
 
 const STORAGE_PREFIX = "leave_sent";
+const state = {
+  availableDates: [],
+  dateSet: new Set(),
+  fixedMembers: []
+};
 
-document.addEventListener("DOMContentLoaded", () => {
-  initLiffSafe();
+document.addEventListener("DOMContentLoaded", async () => {
+  await initLiffSafe();
 
   if (isIndexPage()) {
-    initIndexPage();
+    await initIndexPage();
     return;
   }
 
   if (isDatePage()) {
-    initDatePage();
+    await initDatePage();
   }
 });
 
@@ -35,77 +31,175 @@ function isDatePage() {
   return !!document.getElementById("memberList");
 }
 
-function initIndexPage() {
-  const dateList = document.getElementById("dateList");
-  const customDateInput = document.getElementById("customDate");
+async function initIndexPage() {
+  const reloadBtn = document.getElementById("reloadConfigBtn");
   const goDateBtn = document.getElementById("goDateBtn");
 
-  const today = new Date();
-  const allDates = [];
+  reloadBtn.addEventListener("click", async () => {
+    reloadBtn.disabled = true;
+    reloadBtn.textContent = "讀取中...";
+    try {
+      await loadControlConfig(true);
+      renderIndexDateControls();
+    } catch (error) {
+      alert(`讀取設定失敗：${error.message}`);
+    } finally {
+      reloadBtn.disabled = false;
+      reloadBtn.textContent = "重新讀取設定";
+    }
+  });
 
-  for (let i = 0; i < 14; i += 1) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
-    allDates.push(formatDate(d));
+  goDateBtn.addEventListener("click", () => {
+    const selected = getSelectedCustomDate();
+    if (!selected) {
+      alert("請先選擇可用日期");
+      return;
+    }
+    goToDatePage(selected);
+  });
+
+  try {
+    await loadControlConfig(false);
+    renderIndexDateControls();
+  } catch (error) {
+    showDateListMessage(`設定讀取失敗：${escapeHtml(error.message)}`);
+    disableIndexControls();
+  }
+}
+
+function renderIndexDateControls() {
+  const dateList = document.getElementById("dateList");
+  const customDateSelect = document.getElementById("customDateSelect");
+
+  if (!state.availableDates.length) {
+    showDateListMessage("目前沒有可用日期，請到 Google Sheet 的 available_dates 補資料。");
+    disableIndexControls();
+    return;
   }
 
-  dateList.innerHTML = allDates
+  dateList.innerHTML = state.availableDates
     .map(
-      (date) =>
-        `<button class="date-card" type="button" data-date="${date}" aria-label="進入 ${date} 報名頁">${date}</button>`
+      (item) =>
+        `<button class="date-card" type="button" data-date="${item.date}" aria-label="進入 ${item.label} 報名頁">
+          <span>${escapeHtml(item.label)}</span>
+          <small>${escapeHtml(item.date)}</small>
+        </button>`
     )
     .join("");
 
-  dateList.addEventListener("click", (event) => {
+  dateList.onclick = (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) {
       return;
     }
-
     const btn = target.closest(".date-card");
     if (!btn) {
       return;
     }
-
     const selectedDate = btn.getAttribute("data-date");
     if (!selectedDate) {
       return;
     }
+    goToDatePage(selectedDate);
+  };
 
-    location.href = `./date.html?date=${encodeURIComponent(selectedDate)}`;
-  });
+  customDateSelect.innerHTML = state.availableDates
+    .map((item) => `<option value="${item.date}">${escapeHtml(item.label)} (${escapeHtml(item.date)})</option>`)
+    .join("");
 
-  customDateInput.value = formatDate(today);
+  customDateSelect.disabled = false;
+  document.getElementById("goDateBtn").disabled = false;
+}
 
-  goDateBtn.addEventListener("click", () => {
-    const selected = customDateInput.value;
-    if (!selected) {
-      alert("請先選擇日期");
-      return;
-    }
-    location.href = `./date.html?date=${encodeURIComponent(selected)}`;
-  });
+function disableIndexControls() {
+  const customDateSelect = document.getElementById("customDateSelect");
+  const goDateBtn = document.getElementById("goDateBtn");
+  if (customDateSelect) {
+    customDateSelect.innerHTML = `<option value="">目前無可用日期</option>`;
+    customDateSelect.disabled = true;
+  }
+  if (goDateBtn) {
+    goDateBtn.disabled = true;
+  }
+}
+
+function showDateListMessage(message) {
+  const dateList = document.getElementById("dateList");
+  if (dateList) {
+    dateList.innerHTML = `<div class="empty-state">${message}</div>`;
+  }
+}
+
+function getSelectedCustomDate() {
+  const select = document.getElementById("customDateSelect");
+  if (!select) {
+    return "";
+  }
+  const value = String(select.value || "").trim();
+  if (!state.dateSet.has(value)) {
+    return "";
+  }
+  return value;
 }
 
 async function initDatePage() {
-  const date = getDateFromQuery();
   const pageTitle = document.getElementById("pageTitle");
   const pageSubTitle = document.getElementById("pageSubTitle");
+  const pageError = document.getElementById("pageError");
+  const date = getDateFromQuery();
+
+  try {
+    await loadControlConfig(false);
+  } catch (error) {
+    pageError.hidden = false;
+    pageError.textContent = `無法讀取設定：${error.message}`;
+    lockDatePageActions();
+    return;
+  }
+
+  if (!state.dateSet.has(date)) {
+    pageTitle.textContent = "日期不可用";
+    pageSubTitle.textContent = `你選的日期 ${date} 不在可開放清單內。`;
+    pageError.hidden = false;
+    pageError.textContent = "請回上一頁，從可用日期按鈕重新進入。";
+    lockDatePageActions();
+    return;
+  }
 
   pageTitle.textContent = `${date} 報名頁`;
-  pageSubTitle.textContent = `日期：${date}。可執行固定名單請假、額外報名與最終名單刷新。`;
+  pageSubTitle.textContent = `日期：${date}。固定名單與可用日期均由 Google Sheet 控制。`;
 
   renderFixedMembers(date);
   bindExtraForm(date);
   bindRefreshFinalList(date);
-
   await loadFinalList(date);
+}
+
+function lockDatePageActions() {
+  const memberList = document.getElementById("memberList");
+  const extraSubmitBtn = document.getElementById("extraSubmitBtn");
+  const refreshFinalBtn = document.getElementById("refreshFinalBtn");
+
+  if (memberList) {
+    memberList.innerHTML = `<div class="empty-state">目前無法操作此頁面</div>`;
+  }
+  if (extraSubmitBtn) {
+    extraSubmitBtn.disabled = true;
+  }
+  if (refreshFinalBtn) {
+    refreshFinalBtn.disabled = true;
+  }
 }
 
 function renderFixedMembers(date) {
   const root = document.getElementById("memberList");
 
-  root.innerHTML = APP_CONFIG.fixedMembers
+  if (!state.fixedMembers.length) {
+    root.innerHTML = `<div class="empty-state">目前沒有固定名單，請到 Google Sheet 的 fixed_members 新增資料。</div>`;
+    return;
+  }
+
+  root.innerHTML = state.fixedMembers
     .map((member) => {
       const key = leaveStorageKey(date, member.id);
       const sent = localStorage.getItem(key) === "1";
@@ -117,6 +211,7 @@ function renderFixedMembers(date) {
       <div class="${itemClass}" id="row-${member.id}">
         <div class="member-left">
           <span class="member-name">${escapeHtml(member.name)}</span>
+          <span class="member-meta">${escapeHtml(member.id)} / ${escapeHtml(member.gender)}</span>
           <span class="member-status" id="status-${member.id}">${statusText}</span>
         </div>
         <button
@@ -124,13 +219,12 @@ function renderFixedMembers(date) {
           type="button"
           id="leave-btn-${member.id}"
           ${sent ? "disabled" : ""}
-          data-member-id="${member.id}"
         >${btnText}</button>
       </div>`;
     })
     .join("");
 
-  APP_CONFIG.fixedMembers.forEach((member) => {
+  state.fixedMembers.forEach((member) => {
     const button = document.getElementById(`leave-btn-${member.id}`);
     if (!button || button.disabled) {
       return;
@@ -157,7 +251,6 @@ function renderFixedMembers(date) {
         localStorage.setItem(leaveStorageKey(date, member.id), "1");
         markMemberLeave(member.id);
         button.textContent = "已送出";
-
         await loadFinalList(date);
       } catch (error) {
         button.disabled = false;
@@ -217,7 +310,7 @@ function bindExtraForm(date) {
       setTimeout(() => {
         submitBtn.textContent = "送出額外報名";
         submitBtn.disabled = false;
-      }, 1000);
+      }, 900);
 
       await loadFinalList(date);
     } catch (error) {
@@ -233,7 +326,6 @@ function bindRefreshFinalList(date) {
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     btn.textContent = "刷新中...";
-
     try {
       await loadFinalList(date);
     } finally {
@@ -248,11 +340,7 @@ async function loadFinalList(date) {
   tbody.innerHTML = `<tr><td colspan="4">載入中...</td></tr>`;
 
   try {
-    const data = await callApi({
-      action: "final_list",
-      date
-    });
-
+    const data = await callApi({ action: "final_list", date });
     const records = Array.isArray(data.records) ? data.records : [];
 
     if (!records.length) {
@@ -274,6 +362,46 @@ async function loadFinalList(date) {
   } catch (error) {
     tbody.innerHTML = `<tr><td colspan="4">載入失敗：${escapeHtml(error.message)}</td></tr>`;
   }
+}
+
+async function loadControlConfig(forceReload) {
+  if (!forceReload && state.availableDates.length && state.fixedMembers.length) {
+    return;
+  }
+
+  const data = await callApi({ action: "config" });
+
+  const availableDates = Array.isArray(data.availableDates) ? data.availableDates : [];
+  const fixedMembers = Array.isArray(data.fixedMembers) ? data.fixedMembers : [];
+
+  state.availableDates = availableDates
+    .map((row) => {
+      const date = String(row.date || "").trim();
+      const label = String(row.label || row.date || "").trim();
+      if (!isValidIsoDate(date)) {
+        return null;
+      }
+      return { date, label: label || date };
+    })
+    .filter(Boolean);
+
+  state.fixedMembers = fixedMembers
+    .map((row) => {
+      const id = String(row.memberId || "").trim();
+      const name = String(row.name || "").trim();
+      const gender = String(row.gender || "").trim();
+      if (!id || !name) {
+        return null;
+      }
+      return { id, name, gender: gender || "未填" };
+    })
+    .filter(Boolean);
+
+  state.dateSet = new Set(state.availableDates.map((item) => item.date));
+}
+
+function goToDatePage(date) {
+  location.href = `./date.html?date=${encodeURIComponent(date)}`;
 }
 
 async function callApi(params) {
@@ -336,9 +464,9 @@ async function initLiffSafe() {
 
 function getDateFromQuery() {
   const p = new URLSearchParams(location.search);
-  const d = p.get("date");
+  const d = String(p.get("date") || "").trim();
   if (!d) {
-    return formatDate(new Date());
+    return "";
   }
   return d;
 }
@@ -347,11 +475,8 @@ function leaveStorageKey(date, memberId) {
   return `${STORAGE_PREFIX}:${date}:${memberId}`;
 }
 
-function formatDate(dateObj) {
-  const y = dateObj.getFullYear();
-  const m = `${dateObj.getMonth() + 1}`.padStart(2, "0");
-  const d = `${dateObj.getDate()}`.padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function isValidIsoDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function escapeHtml(value) {
