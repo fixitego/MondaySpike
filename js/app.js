@@ -5,13 +5,11 @@
   settlementTriggerToken: "CHANGE_ME_STRONG_TOKEN"
 };
 
-const STORAGE_PREFIX = "leave_sent";
-const CONFIG_STORAGE_KEY = "monday_spike:config:v1";
-const CONFIG_CACHE_MS = 5 * 60 * 1000;
 const state = {
   availableDates: [],
   dateSet: new Set(),
   fixedMembers: [],
+  leaveMemberIds: new Set(),
   policy: { allowUserEdit: true, allowEditPastDate: false, enableManualSettlementTrigger: true, today: "" },
   currentDate: "",
   isDateLocked: false
@@ -37,12 +35,6 @@ async function initIndexPage() {
 
   try {
     showGlobalLoading();
-    const cached = readCachedConfig();
-    if (cached) {
-      applyConfigData(cached);
-      renderIndexDateControls();
-      hideGlobalLoading();
-    }
     await loadControlConfig(false);
     renderIndexDateControls();
   } catch (error) {
@@ -147,7 +139,6 @@ function renderFixedMembers(date) {
       button.textContent = "送出中...";
       try {
         await callApi({ action: "leave", date, memberId: member.id, memberName: member.name, gender: member.gender });
-        localStorage.setItem(leaveStorageKey(date, member.id), "1");
         markMemberLeave(member.id);
         button.textContent = "已送出";
         await loadFinalList(date);
@@ -163,7 +154,7 @@ function renderFixedMembers(date) {
 function buildMemberHtml(list, date, genderClass) {
   if (!list.length) return `<div class="empty-state">無資料</div>`;
   return list.map((member) => {
-    const sent = localStorage.getItem(leaveStorageKey(date, member.id)) === "1";
+    const sent = state.leaveMemberIds.has(member.id);
     const itemClass = sent ? `member-item ${genderClass} leave` : `member-item ${genderClass}`;
     const disabled = sent || !canEditCurrentDate();
     return `
@@ -314,6 +305,8 @@ function renderSettlementStatus(settlement) {
 
 async function loadPageData(date) {
   const data = await callApi({ action: "page_data", date });
+  applyLeaveState(data.leaveMemberIds);
+  renderFixedMembers(date);
   renderFinalList(data.records);
   renderExtraList(date, data.extraRecords);
   renderSettlementStatus(data.settlement);
@@ -525,21 +518,21 @@ function applyDateLockToInputs() {
 }
 
 function markMemberLeave(memberId) {
+  state.leaveMemberIds.add(memberId);
   const row = document.getElementById(`row-${memberId}`);
   const status = document.getElementById(`status-${memberId}`);
+  const button = document.getElementById(`leave-btn-${memberId}`);
   if (row) row.classList.add("leave");
   if (status) status.textContent = "已送出請假";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "已送出";
+  }
 }
 
 async function loadControlConfig(forceReload) {
-  if (!forceReload && state.availableDates.length && state.fixedMembers.length) return;
-  if (!forceReload) {
-    const cached = readCachedConfig();
-    if (cached) applyConfigData(cached);
-  }
   const data = await callApi({ action: "config" });
   applyConfigData(data);
-  writeCachedConfig(data);
 }
 
 function applyConfigData(data) {
@@ -564,24 +557,6 @@ function applyConfigData(data) {
 
   state.policy = data.policy || state.policy;
   state.dateSet = new Set(state.availableDates.map((d) => d.date));
-}
-
-function readCachedConfig() {
-  try {
-    const cached = JSON.parse(localStorage.getItem(CONFIG_STORAGE_KEY) || "null");
-    if (!cached || Date.now() - cached.savedAt > CONFIG_CACHE_MS) return null;
-    return cached.data;
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedConfig(data) {
-  try {
-    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify({ savedAt: Date.now(), data }));
-  } catch {
-    // Browsers can disable storage; live API remains the source of truth.
-  }
 }
 
 function goToDatePage(date) {
@@ -616,7 +591,8 @@ async function mockApi(params) {
       records: finalData.records,
       extraRecords: extraData.records,
       settlement: settlementData.settlement,
-      auditRecords: []
+      auditRecords: [],
+      leaveMemberIds: [...getMockLeaves(date)]
     };
   }
 
@@ -701,10 +677,7 @@ async function mockApi(params) {
   return { ok: true };
 }
 
-let mockSeedCache = null;
-
 async function loadMockSeed() {
-  if (mockSeedCache) return mockSeedCache;
   const [datesCsv, membersCsv] = await Promise.all([
     fetch("./sheet_templates/available_dates.csv").then((r) => r.text()),
     fetch("./sheet_templates/fixed_members.csv").then((r) => r.text())
@@ -712,13 +685,12 @@ async function loadMockSeed() {
   const datesRows = parseCsvText(datesCsv);
   const membersRows = parseCsvText(membersCsv);
 
-  mockSeedCache = {
+  return {
     availableDates: datesRows.filter((r) => isTruthyFlag(r.enabled)).map((r) => ({ date: r.date, label: r.label || r.date })),
     fixedMembers: membersRows
       .filter((r) => isTruthyFlag(r.enabled))
       .map((r) => ({ memberId: r.memberId, name: r.memberName, gender: r.gender || "未填" }))
   };
-  return mockSeedCache;
 }
 
 function parseCsvText(text) {
@@ -825,13 +797,14 @@ function getDateFromQuery() {
   return String(new URLSearchParams(location.search).get("date") || "").trim();
 }
 
-function leaveStorageKey(date, memberId) {
-  return `${STORAGE_PREFIX}:${date}:${memberId}`;
-}
-
 function showGlobalLoading() {
   const el = document.getElementById("globalLoading");
   if (el) el.hidden = false;
+}
+
+function applyLeaveState(leaveMemberIds) {
+  const ids = Array.isArray(leaveMemberIds) ? leaveMemberIds : [];
+  state.leaveMemberIds = new Set(ids.map((id) => String(id || "").trim()).filter(Boolean));
 }
 
 function hideGlobalLoading() {

@@ -60,7 +60,6 @@
 ## 載入速度與快取
 
 - GitHub Pages 只負責靜態檔案，不能直接當資料庫寫入。
-- 首頁設定會在瀏覽器 `localStorage` 快取 5 分鐘。
-- GAS 會用 `CacheService` 快取日期與固定名單 60 秒。
+- 目前已關閉前端設定快取與 GAS `CacheService` 快取，方便測試時立即反映 Google Sheet 內容。
 - 日期頁使用單一 `page_data` API 一次取得最終名單、額外報名、結算狀態與異動紀錄。
-- 手動修改 Google Sheet 後，日期與固定名單最多約 60 秒後生效。
+- 手動修改 Google Sheet 後，重新整理頁面就會重新向 GAS 讀取最新資料。

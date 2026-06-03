@@ -8,9 +8,6 @@ const SETTLE_SHEET = 'settlement_control';
 
 const TOTAL_LIMIT = 18;
 const FEMALE_LIMIT = 9;
-const CONFIG_CACHE_KEY = 'config:v1';
-const CONFIG_CACHE_SECONDS = 2;
-const DATA_CACHE_SECONDS = 2;
 
 // 安全控制（寫死在程式）
 const ALLOW_USER_EDIT = true;
@@ -25,7 +22,7 @@ function doGet(e) {
     if (!action) return jsonOutput({ ok: false, message: 'missing action' });
 
     if (action === 'config') {
-      return jsonOutput(getCachedConfigResponse());
+      return jsonOutput(getConfigResponse());
     }
 
     if (action === 'page_data') {
@@ -37,7 +34,8 @@ function doGet(e) {
         records: getFinalListByDate(date),
         extraRecords: getExtraSignupsWithStatus(date),
         settlement: getSettlementStatus(date),
-        auditRecords: getAuditLogsByDate(date)
+        auditRecords: getAuditLogsByDate(date),
+        leaveMemberIds: getLeaveMemberIdsByDate(date)
       });
     }
 
@@ -152,12 +150,8 @@ function assertEditable() {
   if (!ALLOW_USER_EDIT) throw new Error('editing is disabled by server policy');
 }
 
-function getCachedConfigResponse() {
-  var cache = CacheService.getScriptCache();
-  var cached = cache.get(CONFIG_CACHE_KEY);
-  if (cached) return JSON.parse(cached);
-
-  var response = {
+function getConfigResponse() {
+  return {
     ok: true,
     availableDates: getAvailableDates(),
     fixedMembers: getFixedMembers(),
@@ -168,8 +162,6 @@ function getCachedConfigResponse() {
       today: todayDateStr()
     }
   };
-  cache.put(CONFIG_CACHE_KEY, JSON.stringify(response), CONFIG_CACHE_SECONDS);
-  return response;
 }
 
 function assertEditableDate(date) {
@@ -445,6 +437,15 @@ function getLeaveSet(date) {
   return out;
 }
 
+function getLeaveMemberIdsByDate(date) {
+  var leaveSet = getLeaveSet(date);
+  var out = [];
+  for (var memberId in leaveSet) {
+    if (leaveSet.hasOwnProperty(memberId)) out.push(memberId);
+  }
+  return out;
+}
+
 function getExtraSignupsByDate(date) {
   const rows = getSheet(EXTRA_SHEET).getDataRange().getDisplayValues();
   const list = [];
@@ -545,11 +546,6 @@ function getSettlementRow(date, createIfMissing) {
 }
 
 function getAvailableDates() {
-  var cache = CacheService.getScriptCache();
-  var cacheKey = 'available_dates:v1';
-  var cached = cache.get(cacheKey);
-  if (cached) return JSON.parse(cached);
-
   var rows = getSheet(DATES_SHEET).getDataRange().getDisplayValues();
   var result = [];
   for (var i = 1; i < rows.length; i += 1) {
@@ -561,16 +557,10 @@ function getAvailableDates() {
     result.push({ date: date, label: label || date });
     ensureSettlementRow(date);
   }
-  cache.put(cacheKey, JSON.stringify(result), DATA_CACHE_SECONDS);
   return result;
 }
 
 function getFixedMembers() {
-  var cache = CacheService.getScriptCache();
-  var cacheKey = 'fixed_members:v1';
-  var cached = cache.get(cacheKey);
-  if (cached) return JSON.parse(cached);
-
   var rows = getSheet(MEMBERS_SHEET).getDataRange().getDisplayValues();
   var result = [];
   for (var i = 1; i < rows.length; i += 1) {
@@ -582,7 +572,6 @@ function getFixedMembers() {
     if (enabled && ['1', 'true', 'yes', 'y'].indexOf(enabled) < 0) continue;
     result.push({ memberId: memberId, name: name, gender: gender || '未填' });
   }
-  cache.put(cacheKey, JSON.stringify(result), DATA_CACHE_SECONDS);
   return result;
 }
 
