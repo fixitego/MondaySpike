@@ -353,6 +353,20 @@ tr.gender-female td { background: rgba(95,45,75,.25); }
 #uiModalInput { margin-bottom: 10px; }
 .ui-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
+#auditSection summary {
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+#auditSection[open] summary {
+  color: #ffd9ba;
+}
+
+.audit-head {
+  margin-bottom: 8px;
+}
+
 @media (max-width: 760px) {
   .split-two { grid-template-columns: 1fr; }
   .hero-track { height: 132px; }

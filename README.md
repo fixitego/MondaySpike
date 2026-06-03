@@ -56,3 +56,11 @@
 ## 你需要重新部署
 
 `gas/Code.gs` 已更新 API 與資料欄位，請重新部署 Apps Script Web App。
+
+## 載入速度與快取
+
+- GitHub Pages 只負責靜態檔案，不能直接當資料庫寫入。
+- 首頁設定會在瀏覽器 `localStorage` 快取 5 分鐘。
+- GAS 會用 `CacheService` 快取日期與固定名單 60 秒。
+- 日期頁使用單一 `page_data` API 一次取得最終名單、額外報名、結算狀態與異動紀錄。
+- 手動修改 Google Sheet 後，日期與固定名單最多約 60 秒後生效。

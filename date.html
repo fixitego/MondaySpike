@@ -78,6 +78,7 @@
             <tr>
               <th>類型</th>
               <th>姓名</th>
+              <th>狀態</th>
               <th>備註</th>
             </tr>
           </thead>
@@ -108,6 +109,29 @@
         </table>
       </div>
       <p id="finalSummary" class="final-summary"></p>
+    </section>
+
+    <section class="panel panel-media panel-final">
+      <details id="auditSection">
+        <summary>異動紀錄（請假 / 額外報名）</summary>
+        <div class="row between audit-head">
+          <p class="note">預設收合，點開可檢視該日期的新增/取消時間。</p>
+          <button id="refreshAuditBtn" class="btn icon-btn" type="button" title="刷新異動紀錄">↻</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>時間</th>
+                <th>類別</th>
+                <th>動作</th>
+                <th>內容</th>
+              </tr>
+            </thead>
+            <tbody id="auditBody"></tbody>
+          </table>
+        </div>
+      </details>
     </section>
   </main>
 

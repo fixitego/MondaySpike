@@ -8,11 +8,15 @@ const SETTLE_SHEET = 'settlement_control';
 
 const TOTAL_LIMIT = 18;
 const FEMALE_LIMIT = 9;
+const CONFIG_CACHE_KEY = 'config:v1';
+const CONFIG_CACHE_SECONDS = 2;
+const DATA_CACHE_SECONDS = 2;
 
 // 安全控制（寫死在程式）
 const ALLOW_USER_EDIT = true;
+const ALLOW_EDIT_PAST_DATE = false;
 const ENABLE_MANUAL_SETTLEMENT_TRIGGER = true;
-const SETTLEMENT_TRIGGER_TOKEN = '123456';
+const SETTLEMENT_TRIGGER_TOKEN = 'fixitego';
 
 function doGet(e) {
   try {
@@ -21,14 +25,19 @@ function doGet(e) {
     if (!action) return jsonOutput({ ok: false, message: 'missing action' });
 
     if (action === 'config') {
+      return jsonOutput(getCachedConfigResponse());
+    }
+
+    if (action === 'page_data') {
+      const date = normalize(e.parameter.date);
+      validateDateIsAvailable(date);
+      rebuildFinalListForDate(date);
       return jsonOutput({
         ok: true,
-        availableDates: getAvailableDates(),
-        fixedMembers: getFixedMembers(),
-        policy: {
-          allowUserEdit: ALLOW_USER_EDIT,
-          enableManualSettlementTrigger: ENABLE_MANUAL_SETTLEMENT_TRIGGER
-        }
+        records: getFinalListByDate(date),
+        extraRecords: getExtraSignupsWithStatus(date),
+        settlement: getSettlementStatus(date),
+        auditRecords: getAuditLogsByDate(date)
       });
     }
 
@@ -40,21 +49,21 @@ function doGet(e) {
     }
 
     if (action === 'leave') {
-      assertEditable();
+      assertEditableDate(normalize(e.parameter.date));
       saveLeave(e.parameter);
       rebuildFinalListForDate(normalize(e.parameter.date));
       return jsonOutput({ ok: true });
     }
 
     if (action === 'extra_signup') {
-      assertEditable();
+      assertEditableDate(normalize(e.parameter.date));
       saveExtraSignup(e.parameter);
       rebuildFinalListForDate(normalize(e.parameter.date));
       return jsonOutput({ ok: true });
     }
 
     if (action === 'cancel_extra_signup') {
-      assertEditable();
+      assertEditableDate(normalize(e.parameter.date));
       cancelExtraSignup(normalize(e.parameter.signupId));
       const date = normalize(e.parameter.date);
       if (date) rebuildFinalListForDate(date);
@@ -64,7 +73,13 @@ function doGet(e) {
     if (action === 'extra_list') {
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
-      return jsonOutput({ ok: true, records: getExtraSignupsByDate(date) });
+      return jsonOutput({ ok: true, records: getExtraSignupsWithStatus(date) });
+    }
+
+    if (action === 'audit_logs') {
+      const date = normalize(e.parameter.date);
+      validateDateIsAvailable(date);
+      return jsonOutput({ ok: true, records: getAuditLogsByDate(date) });
     }
 
     if (action === 'settlement_status') {
@@ -74,6 +89,7 @@ function doGet(e) {
     }
 
     if (action === 'trigger_settlement') {
+      assertEditableDate(normalize(e.parameter.date));
       requireSettlementPermission(normalize(e.parameter.token));
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
@@ -95,21 +111,21 @@ function doPost(e) {
     const action = normalize(payload.action);
 
     if (action === 'leave') {
-      assertEditable();
+      assertEditableDate(normalize(payload.date));
       saveLeave(payload);
       rebuildFinalListForDate(normalize(payload.date));
       return jsonOutput({ ok: true });
     }
 
     if (action === 'extra_signup') {
-      assertEditable();
+      assertEditableDate(normalize(payload.date));
       saveExtraSignup(payload);
       rebuildFinalListForDate(normalize(payload.date));
       return jsonOutput({ ok: true });
     }
 
     if (action === 'cancel_extra_signup') {
-      assertEditable();
+      assertEditableDate(normalize(payload.date));
       cancelExtraSignup(normalize(payload.signupId));
       const date = normalize(payload.date);
       if (date) rebuildFinalListForDate(date);
@@ -117,6 +133,7 @@ function doPost(e) {
     }
 
     if (action === 'trigger_settlement') {
+      assertEditableDate(normalize(payload.date));
       requireSettlementPermission(normalize(payload.token));
       const date = normalize(payload.date);
       validateDateIsAvailable(date);
@@ -133,6 +150,34 @@ function doPost(e) {
 
 function assertEditable() {
   if (!ALLOW_USER_EDIT) throw new Error('editing is disabled by server policy');
+}
+
+function getCachedConfigResponse() {
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(CONFIG_CACHE_KEY);
+  if (cached) return JSON.parse(cached);
+
+  var response = {
+    ok: true,
+    availableDates: getAvailableDates(),
+    fixedMembers: getFixedMembers(),
+    policy: {
+      allowUserEdit: ALLOW_USER_EDIT,
+      allowEditPastDate: ALLOW_EDIT_PAST_DATE,
+      enableManualSettlementTrigger: ENABLE_MANUAL_SETTLEMENT_TRIGGER,
+      today: todayDateStr()
+    }
+  };
+  cache.put(CONFIG_CACHE_KEY, JSON.stringify(response), CONFIG_CACHE_SECONDS);
+  return response;
+}
+
+function assertEditableDate(date) {
+  assertEditable();
+  if (!date) throw new Error('date required');
+  if (!ALLOW_EDIT_PAST_DATE && isPastDate(date)) {
+    throw new Error('date is closed for editing');
+  }
 }
 
 function requireSettlementPermission(token) {
@@ -222,7 +267,10 @@ function rebuildFinalListForDate(date) {
   }
 
   var rebuilt = baseList.slice();
-  if (getSettlementStatus(date).settled) rebuilt = applyExtraFillLogic(date, rebuilt);
+  if (getSettlementStatus(date).settled) {
+    var extrasForDate = getExtraSignupsByDate(date);
+    rebuilt = applyExtraFillLogic(date, rebuilt, extrasForDate, null);
+  }
 
   var output = [finalRows[0] || ['date', 'name', 'gender', 'source']];
   for (var j = 1; j < finalRows.length; j += 1) {
@@ -234,30 +282,36 @@ function rebuildFinalListForDate(date) {
   finalSheet.getRange(1, 1, output.length, 4).setValues(output);
 }
 
-function applyExtraFillLogic(date, currentList) {
-  const records = getExtraSignupsByDate(date);
+function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
+  const extraRecords = records || getExtraSignupsByDate(date);
   var females = countFemale(currentList);
   var total = currentList.length;
   var result = currentList.slice();
 
-  for (var i = 0; i < records.length; i += 1) {
+  for (var i = 0; i < extraRecords.length; i += 1) {
     if (total >= TOTAL_LIMIT) break;
 
-    var r = records[i];
+    var r = extraRecords[i];
     if (r.type === 'MALE') {
+      var maleAdded = false;
       if (total + 1 <= TOTAL_LIMIT) {
         result.push([date, r.maleName, '男', '額外報名']);
         total += 1;
+        maleAdded = true;
       }
+      if (statusBySignupId) statusBySignupId[r.signupId] = maleAdded ? '已補上' : '候補';
       continue;
     }
 
     if (r.type === 'FEMALE') {
+      var femaleAdded = false;
       if (total + 1 <= TOTAL_LIMIT && females + 1 <= FEMALE_LIMIT) {
         result.push([date, r.femaleName, '女', '額外報名']);
         total += 1;
         females += 1;
+        femaleAdded = true;
       }
+      if (statusBySignupId) statusBySignupId[r.signupId] = femaleAdded ? '已補上' : '候補';
       continue;
     }
 
@@ -265,6 +319,8 @@ function applyExtraFillLogic(date, currentList) {
       var canMale = total + 1 <= TOTAL_LIMIT;
       var canFemale = total + 1 <= TOTAL_LIMIT && females + 1 <= FEMALE_LIMIT;
       var mustTogether = r.pairMustTogether === '1';
+      var pairMaleAdded = false;
+      var pairFemaleAdded = false;
 
       if (mustTogether) {
         if (total + 2 <= TOTAL_LIMIT && females + 1 <= FEMALE_LIMIT) {
@@ -272,22 +328,112 @@ function applyExtraFillLogic(date, currentList) {
           result.push([date, r.femaleName, '女', '額外報名(配對)']);
           total += 2;
           females += 1;
+          pairMaleAdded = true;
+          pairFemaleAdded = true;
         }
       } else {
         if (canMale) {
           result.push([date, r.maleName, '男', '額外報名(配對-男)']);
           total += 1;
+          pairMaleAdded = true;
         }
         if (canFemale && total < TOTAL_LIMIT) {
           result.push([date, r.femaleName, '女', '額外報名(配對-女)']);
           total += 1;
           females += 1;
+          pairFemaleAdded = true;
         }
+      }
+      if (statusBySignupId) {
+        if (pairMaleAdded && pairFemaleAdded) statusBySignupId[r.signupId] = '已補上';
+        else if (pairMaleAdded || pairFemaleAdded) statusBySignupId[r.signupId] = '部分補上';
+        else statusBySignupId[r.signupId] = '候補';
       }
     }
   }
 
   return result;
+}
+
+function getExtraSignupsWithStatus(date) {
+  var records = getExtraSignupsByDate(date);
+  var statusMap = {};
+  var settled = getSettlementStatus(date).settled;
+
+  if (settled) {
+    var fixedMembers = getFixedMembers();
+    var leaveSet = getLeaveSet(date);
+    var base = [];
+    for (var i = 0; i < fixedMembers.length; i += 1) {
+      var member = fixedMembers[i];
+      if (!leaveSet[normalize(member.memberId)]) {
+        base.push([date, member.name, member.gender, '固定名單']);
+      }
+    }
+    applyExtraFillLogic(date, base, records, statusMap);
+  } else {
+    for (var j = 0; j < records.length; j += 1) statusMap[records[j].signupId] = '候補';
+  }
+
+  return records.map(function (r) {
+    return {
+      signupId: r.signupId,
+      date: r.date,
+      type: r.type,
+      maleName: r.maleName,
+      femaleName: r.femaleName,
+      note: r.note,
+      pairMustTogether: r.pairMustTogether,
+      createdAt: r.createdAt,
+      status: statusMap[r.signupId] || '候補'
+    };
+  });
+}
+
+function getAuditLogsByDate(date) {
+  var logs = [];
+  var leaveRows = getSheet(LEAVE_SHEET).getDataRange().getDisplayValues();
+  var extraRows = getSheet(EXTRA_SHEET).getDataRange().getDisplayValues();
+
+  for (var i = 1; i < leaveRows.length; i += 1) {
+    if (normalize(leaveRows[i][0]) !== date) continue;
+    logs.push({
+      time: normalize(leaveRows[i][5]),
+      kind: '固定名單請假',
+      action: '新增',
+      detail: normalize(leaveRows[i][2]) + ' / ' + normalize(leaveRows[i][3])
+    });
+  }
+
+  for (var j = 1; j < extraRows.length; j += 1) {
+    if (normalize(extraRows[j][1]) !== date) continue;
+    logs.push({
+      time: normalize(extraRows[j][8]),
+      kind: '額外報名',
+      action: '新增',
+      detail: buildExtraDetail(normalize(extraRows[j][2]), normalize(extraRows[j][3]), normalize(extraRows[j][4]))
+    });
+    if (normalize(extraRows[j][7]) === '1') {
+      logs.push({
+        time: normalize(extraRows[j][9]),
+        kind: '額外報名',
+        action: '取消',
+        detail: buildExtraDetail(normalize(extraRows[j][2]), normalize(extraRows[j][3]), normalize(extraRows[j][4]))
+      });
+    }
+  }
+
+  logs.sort(function (a, b) {
+    if (a.time === b.time) return 0;
+    return a.time > b.time ? -1 : 1;
+  });
+  return logs;
+}
+
+function buildExtraDetail(type, maleName, femaleName) {
+  if (type === 'MALE') return '男 / ' + maleName;
+  if (type === 'FEMALE') return '女 / ' + femaleName;
+  return '一男一女 / ' + maleName + ' + ' + femaleName;
 }
 
 function getLeaveSet(date) {
@@ -399,6 +545,11 @@ function getSettlementRow(date, createIfMissing) {
 }
 
 function getAvailableDates() {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'available_dates:v1';
+  var cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
   var rows = getSheet(DATES_SHEET).getDataRange().getDisplayValues();
   var result = [];
   for (var i = 1; i < rows.length; i += 1) {
@@ -410,10 +561,16 @@ function getAvailableDates() {
     result.push({ date: date, label: label || date });
     ensureSettlementRow(date);
   }
+  cache.put(cacheKey, JSON.stringify(result), DATA_CACHE_SECONDS);
   return result;
 }
 
 function getFixedMembers() {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'fixed_members:v1';
+  var cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
   var rows = getSheet(MEMBERS_SHEET).getDataRange().getDisplayValues();
   var result = [];
   for (var i = 1; i < rows.length; i += 1) {
@@ -425,6 +582,7 @@ function getFixedMembers() {
     if (enabled && ['1', 'true', 'yes', 'y'].indexOf(enabled) < 0) continue;
     result.push({ memberId: memberId, name: name, gender: gender || '未填' });
   }
+  cache.put(cacheKey, JSON.stringify(result), DATA_CACHE_SECONDS);
   return result;
 }
 
@@ -493,6 +651,15 @@ function nowIso() {
 function nowIsoMinute() {
   var tz = Session.getScriptTimeZone() || 'Asia/Taipei';
   return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm');
+}
+
+function todayDateStr() {
+  var tz = Session.getScriptTimeZone() || 'Asia/Taipei';
+  return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+}
+
+function isPastDate(date) {
+  return normalize(date) < todayDateStr();
 }
 
 function normalize(value) {

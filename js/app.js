@@ -6,11 +6,15 @@
 };
 
 const STORAGE_PREFIX = "leave_sent";
+const CONFIG_STORAGE_KEY = "monday_spike:config:v1";
+const CONFIG_CACHE_MS = 5 * 60 * 1000;
 const state = {
   availableDates: [],
   dateSet: new Set(),
   fixedMembers: [],
-  policy: { allowUserEdit: true, enableManualSettlementTrigger: true }
+  policy: { allowUserEdit: true, allowEditPastDate: false, enableManualSettlementTrigger: true, today: "" },
+  currentDate: "",
+  isDateLocked: false
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -33,6 +37,12 @@ async function initIndexPage() {
 
   try {
     showGlobalLoading();
+    const cached = readCachedConfig();
+    if (cached) {
+      applyConfigData(cached);
+      renderIndexDateControls();
+      hideGlobalLoading();
+    }
     await loadControlConfig(false);
     renderIndexDateControls();
   } catch (error) {
@@ -77,36 +87,40 @@ async function initDatePage() {
   const date = getDateFromQuery();
   const pageError = document.getElementById("pageError");
 
+  showGlobalLoading();
   try {
-    showGlobalLoading();
     await loadControlConfig(false);
+
+    if (!state.dateSet.has(date)) {
+      pageError.hidden = false;
+      pageError.textContent = `日期 ${date} 不在可用清單內。`;
+      lockDatePageActions();
+      return;
+    }
+
+    state.currentDate = date;
+    state.isDateLocked = isDatePast(date, state.policy.today) && !state.policy.allowEditPastDate;
+
+    document.getElementById("pageTitle").textContent = `${date} 報名頁`;
+    document.getElementById("pageSubTitle").textContent = state.isDateLocked
+      ? `日期：${date}（已過期，僅可檢視資料）`
+      : `日期：${date}`;
+
+    renderFixedMembers(date);
+    bindExtraForm(date);
+    bindRefreshButtons(date);
+    bindSettlementButton(date);
+    bindExtraTypeBehavior();
+    applyDateLockToInputs();
+
+    await loadPageData(date);
   } catch (error) {
     pageError.hidden = false;
-    pageError.textContent = `無法讀取設定：${error.message}`;
+    pageError.textContent = `載入失敗：${error.message}`;
     lockDatePageActions();
+  } finally {
     hideGlobalLoading();
-    return;
   }
-
-  if (!state.dateSet.has(date)) {
-    pageError.hidden = false;
-    pageError.textContent = `日期 ${date} 不在可用清單內。`;
-    lockDatePageActions();
-    hideGlobalLoading();
-    return;
-  }
-
-  document.getElementById("pageTitle").textContent = `${date} 報名頁`;
-  document.getElementById("pageSubTitle").textContent = `日期：${date}`;
-
-  renderFixedMembers(date);
-  bindExtraForm(date);
-  bindRefreshButtons(date);
-  bindSettlementButton(date);
-  bindExtraTypeBehavior();
-
-  await Promise.all([loadFinalList(date), loadExtraList(date), loadSettlementStatus(date)]);
-  hideGlobalLoading();
 }
 
 function renderFixedMembers(date) {
@@ -118,7 +132,7 @@ function renderFixedMembers(date) {
   maleRoot.innerHTML = buildMemberHtml(male, date, "male");
   femaleRoot.innerHTML = buildMemberHtml(female, date, "female");
 
-  if (!state.policy.allowUserEdit) return;
+  if (!canEditCurrentDate()) return;
 
   state.fixedMembers.forEach((member) => {
     const button = document.getElementById(`leave-btn-${member.id}`);
@@ -151,7 +165,7 @@ function buildMemberHtml(list, date, genderClass) {
   return list.map((member) => {
     const sent = localStorage.getItem(leaveStorageKey(date, member.id)) === "1";
     const itemClass = sent ? `member-item ${genderClass} leave` : `member-item ${genderClass}`;
-    const disabled = sent || !state.policy.allowUserEdit;
+    const disabled = sent || !canEditCurrentDate();
     return `
       <div class="${itemClass}" id="row-${member.id}">
         <div class="member-left">
@@ -198,7 +212,7 @@ function bindExtraForm(date) {
   const form = document.getElementById("extraForm");
   const submitBtn = document.getElementById("extraSubmitBtn");
 
-  if (!state.policy.allowUserEdit) {
+  if (!canEditCurrentDate()) {
     submitBtn.disabled = true;
     return;
   }
@@ -235,6 +249,7 @@ function bindExtraForm(date) {
 function bindRefreshButtons(date) {
   const finalBtn = document.getElementById("refreshFinalBtn");
   const extraBtn = document.getElementById("refreshExtraBtn");
+  const auditBtn = document.getElementById("refreshAuditBtn");
 
   finalBtn.addEventListener("click", async () => {
     finalBtn.classList.add("is-loading");
@@ -251,11 +266,19 @@ function bindRefreshButtons(date) {
     extraBtn.disabled = false;
     extraBtn.classList.remove("is-loading");
   });
+
+  auditBtn.addEventListener("click", async () => {
+    auditBtn.classList.add("is-loading");
+    auditBtn.disabled = true;
+    await loadAuditLogs(date);
+    auditBtn.disabled = false;
+    auditBtn.classList.remove("is-loading");
+  });
 }
 
 function bindSettlementButton(date) {
   const btn = document.getElementById("triggerSettlementBtn");
-  if (!state.policy.enableManualSettlementTrigger) {
+  if (!state.policy.enableManualSettlementTrigger || !canEditCurrentDate()) {
     btn.disabled = true;
     return;
   }
@@ -279,58 +302,123 @@ function bindSettlementButton(date) {
 
 async function loadSettlementStatus(date) {
   const data = await callApi({ action: "settlement_status", date });
-  const s = data.settlement || {};
+  renderSettlementStatus(data.settlement);
+}
+
+function renderSettlementStatus(settlement) {
+  const s = settlement || {};
   document.getElementById("settlementInfo").textContent = s.settled
     ? `結算狀態：已結算（${s.settledAt || ""}）`
     : `結算狀態：未結算；排程時間：${s.settleAt || "未設定"}`;
 }
 
+async function loadPageData(date) {
+  const data = await callApi({ action: "page_data", date });
+  renderFinalList(data.records);
+  renderExtraList(date, data.extraRecords);
+  renderSettlementStatus(data.settlement);
+  renderAuditLogs(data.auditRecords);
+}
+
+function renderFinalList(records) {
+  const body = document.getElementById("finalListBody");
+  const summary = document.getElementById("finalSummary");
+  const rows = Array.isArray(records) ? records : [];
+
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="3">目前沒有資料</td></tr>`;
+    summary.textContent = "總人數：0 / 18";
+    return;
+  }
+
+  const maleRows = rows.filter((r) => r.gender === "男");
+  const femaleRows = rows.filter((r) => r.gender === "女");
+  const otherRows = rows.filter((r) => r.gender !== "男" && r.gender !== "女");
+  const renderRow = (r, cls) =>
+    `<tr class="${cls}"><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.gender)}</td><td>${escapeHtml(r.source)}</td></tr>`;
+
+  let html = "";
+  if (maleRows.length) {
+    html += `<tr class="group-row"><td colspan="3">男生名單</td></tr>`;
+    html += maleRows.map((r) => renderRow(r, "gender-male")).join("");
+  }
+  if (femaleRows.length) {
+    html += `<tr class="group-row"><td colspan="3">女生名單</td></tr>`;
+    html += femaleRows.map((r) => renderRow(r, "gender-female")).join("");
+  }
+  if (otherRows.length) {
+    html += `<tr class="group-row"><td colspan="3">其他</td></tr>`;
+    html += otherRows.map((r) => renderRow(r, "")).join("");
+  }
+
+  body.innerHTML = html;
+  summary.textContent = `總人數：${rows.length} / 18，女生：${femaleRows.length} / 9`;
+}
+
+function renderAuditLogs(records) {
+  const body = document.getElementById("auditBody");
+  const rows = Array.isArray(records) ? records : [];
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="4">目前沒有異動紀錄</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map((r) =>
+    `<tr><td>${escapeHtml(r.time || "")}</td><td>${escapeHtml(r.kind || "")}</td><td>${escapeHtml(r.action || "")}</td><td>${escapeHtml(r.detail || "")}</td></tr>`
+  ).join("");
+}
+
 async function loadExtraList(date) {
   const body = document.getElementById("extraListBody");
-  body.innerHTML = `<tr><td colspan="3">載入中...</td></tr>`;
+  body.innerHTML = `<tr><td colspan="4">載入中...</td></tr>`;
 
   try {
     const data = await callApi({ action: "extra_list", date });
-    const rows = Array.isArray(data.records) ? data.records : [];
-    if (!rows.length) {
-      body.innerHTML = `<tr><td colspan="3">目前沒有資料</td></tr>`;
-      return;
-    }
-
-    body.innerHTML = rows.map((r) => {
-      const who = r.type === "MALE" ? r.maleName : r.type === "FEMALE" ? r.femaleName : `${r.maleName} + ${r.femaleName}`;
-      const label = r.type === "MALE" ? "男" : r.type === "FEMALE" ? "女" : "一男一女";
-      const rule = r.type === "PAIR" ? (r.pairMustTogether === "1" ? "（同進同退）" : "（可拆）") : "";
-      const cancelBtn = state.policy.allowUserEdit
-        ? `<button class="btn mini danger" data-cancel-signup="${escapeHtml(r.signupId)}">取消</button>`
-        : "";
-
-      return `<tr>
-        <td>${label}${rule}</td>
-        <td>${escapeHtml(who)}</td>
-        <td>${escapeHtml(r.note || "")} ${cancelBtn}</td>
-      </tr>`;
-    }).join("");
-
-    if (state.policy.allowUserEdit) {
-      body.querySelectorAll("[data-cancel-signup]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const signupId = btn.getAttribute("data-cancel-signup");
-          if (!signupId) return;
-          if (!(await uiConfirm("確定要取消這筆額外報名嗎？"))) return;
-          btn.disabled = true;
-          try {
-            await callApi({ action: "cancel_extra_signup", date, signupId });
-            await Promise.all([loadExtraList(date), loadFinalList(date)]);
-          } catch (error) {
-            uiAlert(`取消失敗：${error.message}`);
-            btn.disabled = false;
-          }
-        });
-      });
-    }
+    renderExtraList(date, data.records);
   } catch (error) {
-    body.innerHTML = `<tr><td colspan="3">載入失敗：${escapeHtml(error.message)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="4">載入失敗：${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+
+function renderExtraList(date, records) {
+  const body = document.getElementById("extraListBody");
+  const rows = Array.isArray(records) ? records : [];
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="4">目前沒有資料</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = rows.map((r) => {
+    const who = r.type === "MALE" ? r.maleName : r.type === "FEMALE" ? r.femaleName : `${r.maleName} + ${r.femaleName}`;
+    const label = r.type === "MALE" ? "男" : r.type === "FEMALE" ? "女" : "一男一女";
+    const rule = r.type === "PAIR" ? (r.pairMustTogether === "1" ? "（同進同退）" : "（可拆）") : "";
+    const cancelBtn = canEditCurrentDate()
+      ? `<button class="btn mini danger" data-cancel-signup="${escapeHtml(r.signupId)}">取消</button>`
+      : "";
+
+    return `<tr>
+      <td>${label}${rule}</td>
+      <td>${escapeHtml(who)}</td>
+      <td>${escapeHtml(r.status || "候補")}</td>
+      <td>${escapeHtml(r.note || "")} ${cancelBtn}</td>
+    </tr>`;
+  }).join("");
+
+  if (canEditCurrentDate()) {
+    body.querySelectorAll("[data-cancel-signup]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const signupId = btn.getAttribute("data-cancel-signup");
+        if (!signupId) return;
+        if (!(await uiConfirm("確定要取消這筆額外報名嗎？"))) return;
+        btn.disabled = true;
+        try {
+          await callApi({ action: "cancel_extra_signup", date, signupId });
+          await loadPageData(date);
+        } catch (error) {
+          uiAlert(`取消失敗：${error.message}`);
+          btn.disabled = false;
+        }
+      });
+    });
   }
 }
 
@@ -351,6 +439,7 @@ async function loadFinalList(date) {
     const maleRows = rows.filter((r) => r.gender === "男");
     const femaleRows = rows.filter((r) => r.gender === "女");
     const otherRows = rows.filter((r) => r.gender !== "男" && r.gender !== "女");
+    const maleCount = maleRows.length;
     const femaleCount = femaleRows.length;
 
     const renderRow = (r, cls) =>
@@ -371,10 +460,28 @@ async function loadFinalList(date) {
     }
     body.innerHTML = html;
 
-    summary.textContent = `總人數：${rows.length} / 18，女生：${femaleCount} / 9`;
+    summary.textContent = `總人數：${rows.length} / 18，男生：${maleCount} 人，女生：${femaleCount} 人`;
   } catch (error) {
     body.innerHTML = `<tr><td colspan="3">載入失敗：${escapeHtml(error.message)}</td></tr>`;
     summary.textContent = "";
+  }
+}
+
+async function loadAuditLogs(date) {
+  const body = document.getElementById("auditBody");
+  body.innerHTML = `<tr><td colspan="4">載入中...</td></tr>`;
+  try {
+    const data = await callApi({ action: "audit_logs", date });
+    const rows = Array.isArray(data.records) ? data.records : [];
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="4">目前沒有異動紀錄</td></tr>`;
+      return;
+    }
+    body.innerHTML = rows.map((r) =>
+      `<tr><td>${escapeHtml(r.time || "")}</td><td>${escapeHtml(r.kind || "")}</td><td>${escapeHtml(r.action || "")}</td><td>${escapeHtml(r.detail || "")}</td></tr>`
+    ).join("");
+  } catch (error) {
+    body.innerHTML = `<tr><td colspan="4">載入失敗：${escapeHtml(error.message)}</td></tr>`;
   }
 }
 
@@ -404,6 +511,19 @@ function getSelectedCustomDate() {
   return state.dateSet.has(value) ? value : "";
 }
 
+function canEditCurrentDate() {
+  return !!state.policy.allowUserEdit && !state.isDateLocked;
+}
+
+function applyDateLockToInputs() {
+  if (!state.isDateLocked) return;
+  const ids = ["extraType", "maleName", "femaleName", "pairMustTogether", "extraNote", "extraSubmitBtn"];
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+}
+
 function markMemberLeave(memberId) {
   const row = document.getElementById(`row-${memberId}`);
   const status = document.getElementById(`status-${memberId}`);
@@ -413,8 +533,16 @@ function markMemberLeave(memberId) {
 
 async function loadControlConfig(forceReload) {
   if (!forceReload && state.availableDates.length && state.fixedMembers.length) return;
+  if (!forceReload) {
+    const cached = readCachedConfig();
+    if (cached) applyConfigData(cached);
+  }
   const data = await callApi({ action: "config" });
+  applyConfigData(data);
+  writeCachedConfig(data);
+}
 
+function applyConfigData(data) {
   state.availableDates = (Array.isArray(data.availableDates) ? data.availableDates : [])
     .map((row) => {
       const date = String(row.date || "").trim();
@@ -438,6 +566,24 @@ async function loadControlConfig(forceReload) {
   state.dateSet = new Set(state.availableDates.map((d) => d.date));
 }
 
+function readCachedConfig() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(CONFIG_STORAGE_KEY) || "null");
+    if (!cached || Date.now() - cached.savedAt > CONFIG_CACHE_MS) return null;
+    return cached.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedConfig(data) {
+  try {
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch {
+    // Browsers can disable storage; live API remains the source of truth.
+  }
+}
+
 function goToDatePage(date) {
   location.href = `./date.html?date=${encodeURIComponent(date)}`;
 }
@@ -458,6 +604,21 @@ async function callApi(params) {
 async function mockApi(params) {
   const mock = await loadMockSeed();
   const date = String(params.date || "").trim();
+
+  if (params.action === "page_data") {
+    const [finalData, extraData, settlementData] = await Promise.all([
+      mockApi({ action: "final_list", date }),
+      mockApi({ action: "extra_list", date }),
+      mockApi({ action: "settlement_status", date })
+    ]);
+    return {
+      ok: true,
+      records: finalData.records,
+      extraRecords: extraData.records,
+      settlement: settlementData.settlement,
+      auditRecords: []
+    };
+  }
 
   if (params.action === "config") {
     return {
@@ -628,6 +789,13 @@ function setMockSettlement(date, settled) {
   item.settled = settled;
   item.settledAt = settled ? new Date().toISOString().slice(0, 19).replace("T", " ") : "";
   localStorage.setItem(mockKey("settle", date), JSON.stringify(item));
+}
+
+function isDatePast(date, today) {
+  const d = String(date || "").trim();
+  const t = String(today || "").trim();
+  if (!d || !t) return false;
+  return d < t;
 }
 
 function buildApiUrl(params) {
