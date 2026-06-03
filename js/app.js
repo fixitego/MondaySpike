@@ -141,7 +141,7 @@ function renderFixedMembers(date) {
         await callApi({ action: "leave", date, memberId: member.id, memberName: member.name, gender: member.gender });
         markMemberLeave(member.id);
         button.textContent = "已送出";
-        await loadFinalList(date);
+        await loadPageData(date);
       } catch (error) {
         button.disabled = false;
         button.textContent = "請假";
@@ -228,7 +228,7 @@ function bindExtraForm(date) {
       form.reset();
       document.getElementById("extraType").value = "MALE";
       bindExtraTypeBehavior();
-      await Promise.all([loadExtraList(date), loadFinalList(date)]);
+      await loadPageData(date);
     } catch (error) {
       uiAlert(`額外報名失敗：${error.message}`);
     } finally {
@@ -282,7 +282,7 @@ function bindSettlementButton(date) {
     btn.disabled = true;
     try {
       await callApi({ action: "trigger_settlement", date, token });
-      await Promise.all([loadSettlementStatus(date), loadFinalList(date)]);
+      await loadPageData(date);
     } catch (error) {
       uiAlert(`觸發結算失敗：${error.message}`);
     } finally {

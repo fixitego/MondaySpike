@@ -250,28 +250,31 @@ function rebuildFinalListForDate(date) {
   const fixedMembers = getFixedMembers();
   const finalSheet = getSheet(FINAL_SHEET);
   const finalRows = finalSheet.getDataRange().getDisplayValues();
+  const settled = getSettlementStatus(date).settled;
 
   const leaveSet = getLeaveSet(date);
   const baseList = [];
   for (var i = 0; i < fixedMembers.length; i += 1) {
     var member = fixedMembers[i];
-    if (!leaveSet[normalize(member.memberId)]) baseList.push([date, member.name, member.gender, '固定名單']);
+    if (!leaveSet[normalize(member.memberId)]) baseList.push([date, member.name, member.gender, '固定名單', '']);
   }
 
   var rebuilt = baseList.slice();
-  if (getSettlementStatus(date).settled) {
+  if (settled) {
     var extrasForDate = getExtraSignupsByDate(date);
+    var settledExtras = getExistingSettledExtras(date, finalRows, extrasForDate);
+    rebuilt = applyExistingExtrasWithinLimits(rebuilt, settledExtras);
     rebuilt = applyExtraFillLogic(date, rebuilt, extrasForDate, null);
   }
 
-  var output = [finalRows[0] || ['date', 'name', 'gender', 'source']];
+  var output = [getFinalListHeaders(finalRows)];
   for (var j = 1; j < finalRows.length; j += 1) {
-    if (normalize(finalRows[j][0]) !== date) output.push(finalRows[j].slice(0, 4));
+    if (normalize(finalRows[j][0]) !== date) output.push(normalizeFinalRow(finalRows[j]));
   }
   output = output.concat(rebuilt);
 
   finalSheet.clearContents();
-  finalSheet.getRange(1, 1, output.length, 4).setValues(output);
+  finalSheet.getRange(1, 1, output.length, 5).setValues(output);
 }
 
 function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
@@ -279,29 +282,36 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
   var females = countFemale(currentList);
   var total = currentList.length;
   var result = currentList.slice();
+  var usedSignupIds = buildUsedSignupStateMap(result);
 
   for (var i = 0; i < extraRecords.length; i += 1) {
     if (total >= TOTAL_LIMIT) break;
 
     var r = extraRecords[i];
+    var used = usedSignupIds[r.signupId] || { count: 0, male: false, female: false };
+
     if (r.type === 'MALE') {
+      if (used.count > 0) continue;
       var maleAdded = false;
       if (total + 1 <= TOTAL_LIMIT) {
-        result.push([date, r.maleName, '男', '額外報名']);
+        result.push([date, r.maleName, '男', '額外報名', r.signupId]);
         total += 1;
         maleAdded = true;
+        usedSignupIds[r.signupId] = { count: 1, male: true, female: false };
       }
       if (statusBySignupId) statusBySignupId[r.signupId] = maleAdded ? '已補上' : '候補';
       continue;
     }
 
     if (r.type === 'FEMALE') {
+      if (used.count > 0) continue;
       var femaleAdded = false;
       if (total + 1 <= TOTAL_LIMIT && females + 1 <= FEMALE_LIMIT) {
-        result.push([date, r.femaleName, '女', '額外報名']);
+        result.push([date, r.femaleName, '女', '額外報名', r.signupId]);
         total += 1;
         females += 1;
         femaleAdded = true;
+        usedSignupIds[r.signupId] = { count: 1, male: false, female: true };
       }
       if (statusBySignupId) statusBySignupId[r.signupId] = femaleAdded ? '已補上' : '候補';
       continue;
@@ -315,25 +325,34 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
       var pairFemaleAdded = false;
 
       if (mustTogether) {
+        if (used.count > 0) continue;
         if (total + 2 <= TOTAL_LIMIT && females + 1 <= FEMALE_LIMIT) {
-          result.push([date, r.maleName, '男', '額外報名(配對)']);
-          result.push([date, r.femaleName, '女', '額外報名(配對)']);
+          result.push([date, r.maleName, '男', '額外報名(配對)', r.signupId]);
+          result.push([date, r.femaleName, '女', '額外報名(配對)', r.signupId]);
           total += 2;
           females += 1;
           pairMaleAdded = true;
           pairFemaleAdded = true;
+          usedSignupIds[r.signupId] = { count: 2, male: true, female: true };
         }
       } else {
-        if (canMale) {
-          result.push([date, r.maleName, '男', '額外報名(配對-男)']);
+        if (!used.male && canMale) {
+          result.push([date, r.maleName, '男', '額外報名(配對-男)', r.signupId]);
           total += 1;
           pairMaleAdded = true;
         }
-        if (canFemale && total < TOTAL_LIMIT) {
-          result.push([date, r.femaleName, '女', '額外報名(配對-女)']);
+        if (!used.female && canFemale && total < TOTAL_LIMIT) {
+          result.push([date, r.femaleName, '女', '額外報名(配對-女)', r.signupId]);
           total += 1;
           females += 1;
           pairFemaleAdded = true;
+        }
+        if (pairMaleAdded || pairFemaleAdded) {
+          usedSignupIds[r.signupId] = {
+            count: used.count + (pairMaleAdded ? 1 : 0) + (pairFemaleAdded ? 1 : 0),
+            male: used.male || pairMaleAdded,
+            female: used.female || pairFemaleAdded
+          };
         }
       }
       if (statusBySignupId) {
@@ -347,23 +366,129 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
   return result;
 }
 
+function getFinalListHeaders(finalRows) {
+  var headers = finalRows[0] || [];
+  return [
+    normalize(headers[0]) || 'date',
+    normalize(headers[1]) || 'name',
+    normalize(headers[2]) || 'gender',
+    normalize(headers[3]) || 'source',
+    normalize(headers[4]) || 'signupId'
+  ];
+}
+
+function normalizeFinalRow(row) {
+  return [
+    normalize(row[0]),
+    normalize(row[1]),
+    normalize(row[2]),
+    normalize(row[3]),
+    normalize(row[4])
+  ];
+}
+
+function buildActiveSignupIdMap(records) {
+  var out = {};
+  for (var i = 0; i < records.length; i += 1) {
+    out[records[i].signupId] = true;
+  }
+  return out;
+}
+
+function getExistingSettledExtras(date, finalRows, records) {
+  var out = [];
+  var activeSignupIds = buildActiveSignupIdMap(records);
+  var usedSignupIds = {};
+
+  for (var i = 1; i < finalRows.length; i += 1) {
+    var row = normalizeFinalRow(finalRows[i]);
+    var signupId = row[4];
+    var gender = normalize(row[2]);
+    if (row[0] !== date) continue;
+    if (!signupId) signupId = findSignupIdForFinalRow(row, records, usedSignupIds);
+    if (!signupId || !activeSignupIds[signupId]) continue;
+    row[4] = signupId;
+    if (!usedSignupIds[signupId]) usedSignupIds[signupId] = { male: false, female: false };
+    if (gender === '男') usedSignupIds[signupId].male = true;
+    if (gender === '女') usedSignupIds[signupId].female = true;
+    out.push(row);
+  }
+  return out;
+}
+
+function findSignupIdForFinalRow(row, records, usedSignupIds) {
+  var name = normalize(row[1]);
+  var gender = normalize(row[2]);
+  var source = normalize(row[3]);
+  if (source.indexOf('額外報名') !== 0) return '';
+
+  for (var i = 0; i < records.length; i += 1) {
+    var r = records[i];
+    var used = usedSignupIds[r.signupId] || { male: false, female: false };
+    if (gender === '男' && !used.male && normalize(r.maleName) === name) return r.signupId;
+    if (gender === '女' && !used.female && normalize(r.femaleName) === name) return r.signupId;
+  }
+
+  return '';
+}
+
+function applyExistingExtrasWithinLimits(currentList, existingExtras) {
+  var result = currentList.slice();
+  var total = result.length;
+  var females = countFemale(result);
+
+  for (var i = 0; i < existingExtras.length; i += 1) {
+    var row = existingExtras[i];
+    var gender = normalize(row[2]);
+    if (total >= TOTAL_LIMIT) break;
+    if (gender === '女' && females + 1 > FEMALE_LIMIT) continue;
+    result.push(row);
+    total += 1;
+    if (gender === '女') females += 1;
+  }
+
+  return result;
+}
+
+function buildUsedSignupStateMap(rows) {
+  var out = {};
+  for (var i = 0; i < rows.length; i += 1) {
+    var signupId = normalize(rows[i][4]);
+    var gender = normalize(rows[i][2]);
+    if (!signupId) continue;
+    if (!out[signupId]) out[signupId] = { count: 0, male: false, female: false };
+    out[signupId].count += 1;
+    if (gender === '男') out[signupId].male = true;
+    if (gender === '女') out[signupId].female = true;
+  }
+  return out;
+}
+
+function getExtraStatusMapFromFinalList(date) {
+  var rows = getSheet(FINAL_SHEET).getDataRange().getDisplayValues();
+  var used = buildUsedSignupStateMap(rows.filter(function (row, index) {
+    return index > 0 && normalize(row[0]) === date;
+  }));
+  var records = getExtraSignupsByDate(date);
+  var out = {};
+
+  for (var i = 0; i < records.length; i += 1) {
+    var r = records[i];
+    var state = used[r.signupId] || { count: 0 };
+    if (state.count <= 0) out[r.signupId] = '候補';
+    else if (r.type === 'PAIR' && state.count < 2) out[r.signupId] = '部分補上';
+    else out[r.signupId] = '已補上';
+  }
+
+  return out;
+}
+
 function getExtraSignupsWithStatus(date) {
   var records = getExtraSignupsByDate(date);
-  var statusMap = {};
+  var statusMap = getExtraStatusMapFromFinalList(date);
   var settled = getSettlementStatus(date).settled;
 
-  if (settled) {
-    var fixedMembers = getFixedMembers();
-    var leaveSet = getLeaveSet(date);
-    var base = [];
-    for (var i = 0; i < fixedMembers.length; i += 1) {
-      var member = fixedMembers[i];
-      if (!leaveSet[normalize(member.memberId)]) {
-        base.push([date, member.name, member.gender, '固定名單']);
-      }
-    }
-    applyExtraFillLogic(date, base, records, statusMap);
-  } else {
+  if (!settled) {
     for (var j = 0; j < records.length; j += 1) statusMap[records[j].signupId] = '候補';
   }
 
@@ -475,9 +600,10 @@ function getExtraSignupsByDate(date) {
 }
 
 function extraTypeWeight(type) {
-  if (type === 'MALE') return 1;
-  if (type === 'FEMALE') return 2;
-  return 3;
+  if (type === 'FEMALE') return 1;
+  if (type === 'PAIR') return 2;
+  if (type === 'MALE') return 3;
+  return 9;
 }
 
 function getFinalListByDate(date) {
@@ -489,7 +615,8 @@ function getFinalListByDate(date) {
       date: normalize(rows[i][0]),
       name: normalize(rows[i][1]),
       gender: normalize(rows[i][2]),
-      source: normalize(rows[i][3])
+      source: normalize(rows[i][3]),
+      signupId: normalize(rows[i][4])
     });
   }
   return result;
@@ -593,7 +720,7 @@ function bootstrapSheets() {
   ensureSheet(MEMBERS_SHEET, ['memberId', 'memberName', 'gender', 'enabled'], [['M001', '王小明', '男', '1'], ['M002', '林小美', '女', '1']]);
   ensureSheet(LEAVE_SHEET, ['date', 'memberId', 'memberName', 'gender', 'status', 'createdAt']);
   ensureSheet(EXTRA_SHEET, ['signupId', 'date', 'type', 'maleName', 'femaleName', 'note', 'pairMustTogether', 'isCanceled', 'createdAt', 'canceledAt']);
-  ensureSheet(FINAL_SHEET, ['date', 'name', 'gender', 'source']);
+  ensureSheet(FINAL_SHEET, ['date', 'name', 'gender', 'source', 'signupId']);
   ensureSheet(SETTLE_SHEET, ['date', 'settleAt(YYYY-MM-DD HH:mm)', 'settled(0/1)', 'settledAt', 'triggerNote']);
 }
 
@@ -609,7 +736,6 @@ function ensureSheet(name, headers, seedRows) {
   var mismatch = false;
   for (var i = 0; i < headers.length; i += 1) if (normalize(current[i]) !== normalize(headers[i])) mismatch = true;
   if (mismatch) {
-    sheet.insertRowBefore(1);
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
 }
