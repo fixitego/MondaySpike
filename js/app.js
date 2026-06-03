@@ -1,6 +1,6 @@
 ﻿const APP_CONFIG = {
   liffId: "2010159498-6XQaB49g",
-  apiBaseUrl: "https://script.google.com/macros/s/AKfycbx7N0LYvdeMMWGsKcPbVyJsvoymjOzWs4wkPg5FZUR0q4JaVg6NNMTG1clWMtJeJ0gw/exec",
+  apiBaseUrl: "https://script.google.com/macros/s/AKfycbzYd5L6yfD3TEXaKSVpqE3pULd9UH0wcGg_DtFaNwUsO6TIDJ93UrGnpyI255INIQ1W/exec",
   apiMode: "live", // live | mock
   settlementTriggerToken: "CHANGE_ME_STRONG_TOKEN"
 };
