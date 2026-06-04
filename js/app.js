@@ -815,7 +815,7 @@ async function initLiffSafe() {
   try {
     await withTimeout(window.liff.init({ liffId: APP_CONFIG.liffId }), 5000);
     if (!window.liff.isLoggedIn()) {
-      if (!window.liff.isInClient()) {
+      if (isIndexPage() && !window.liff.isInClient()) {
         window.liff.login({ redirectUri: location.href });
       }
       return;
