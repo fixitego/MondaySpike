@@ -811,7 +811,7 @@ async function initLiffSafe() {
   try {
     await window.liff.init({ liffId: APP_CONFIG.liffId });
     if (!window.liff.isLoggedIn()) {
-      window.liff.login();
+      window.liff.login({ redirectUri: location.href });
       return;
     }
     const profile = await window.liff.getProfile();
