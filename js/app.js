@@ -12,6 +12,7 @@ const state = {
   leaveMemberIds: new Set(),
   lineUserId: "",
   lineDisplayName: "",
+  lineIdToken: "",
   policy: { allowUserEdit: true, allowEditPastDate: false, enableManualSettlementTrigger: true, today: "" },
   currentDate: "",
   isDateLocked: false
@@ -278,7 +279,7 @@ function bindSettlementButton(date) {
 
   btn.addEventListener("click", async () => {
     const token = await uiPrompt("請輸入結算觸發碼。管理員 LINE 帳號可留空直接送出。");
-    if (!token && !state.lineUserId) return;
+    if (!token && !state.lineIdToken) return;
     if (!(await uiConfirm("確定現在要觸發結算嗎？觸發後會開始用額外報名補位。"))) return;
 
     btn.disabled = true;
@@ -811,12 +812,15 @@ async function initLiffSafe() {
   try {
     await window.liff.init({ liffId: APP_CONFIG.liffId });
     if (!window.liff.isLoggedIn()) {
-      window.liff.login({ redirectUri: location.href });
+      if (!window.liff.isInClient()) {
+        window.liff.login({ redirectUri: location.href });
+      }
       return;
     }
     const profile = await window.liff.getProfile();
     state.lineUserId = String(profile.userId || "").trim();
     state.lineDisplayName = String(profile.displayName || "").trim();
+    state.lineIdToken = String(window.liff.getIDToken() || "").trim();
   } catch (error) {
     console.warn("LIFF init failed:", error);
   }
@@ -825,8 +829,7 @@ async function initLiffSafe() {
 function withLineIdentity(params) {
   return {
     ...params,
-    lineUserId: state.lineUserId,
-    lineDisplayName: state.lineDisplayName
+    lineIdToken: state.lineIdToken
   };
 }
 

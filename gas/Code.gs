@@ -14,6 +14,7 @@ const ALLOW_USER_EDIT = true;
 const ALLOW_EDIT_PAST_DATE = false;
 const ENABLE_MANUAL_SETTLEMENT_TRIGGER = true;
 const SETTLEMENT_TRIGGER_TOKEN = 'fixitego';
+const LINE_LOGIN_CHANNEL_ID = '2010159498';
 const ADMIN_LINE_USER_IDS = [
   // 'Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 ];
@@ -91,7 +92,7 @@ function doGet(e) {
 
     if (action === 'trigger_settlement') {
       assertEditableDate(normalize(e.parameter.date));
-      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineUserId));
+      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken));
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
       triggerSettlement(date, 'manual_api_trigger');
@@ -135,7 +136,7 @@ function doPost(e) {
 
     if (action === 'trigger_settlement') {
       assertEditableDate(normalize(payload.date));
-      requireSettlementPermission(normalize(payload.token), normalize(payload.lineUserId));
+      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken));
       const date = normalize(payload.date);
       validateDateIsAvailable(date);
       triggerSettlement(date, 'manual_post_trigger');
@@ -175,9 +176,10 @@ function assertEditableDate(date) {
   }
 }
 
-function requireSettlementPermission(token, lineUserId) {
+function requireSettlementPermission(token, lineIdToken) {
   if (!ENABLE_MANUAL_SETTLEMENT_TRIGGER) throw new Error('manual settlement trigger is disabled');
-  if (isAdminLineUser(lineUserId)) return;
+  var identity = verifyLineIdentityFromPayload({ lineIdToken: lineIdToken }, false);
+  if (identity && isAdminLineUser(identity.userId)) return;
   if (!token || token !== SETTLEMENT_TRIGGER_TOKEN) throw new Error('permission denied');
 }
 
@@ -190,13 +192,41 @@ function isAdminLineUser(lineUserId) {
   return false;
 }
 
+function verifyLineIdentityFromPayload(payload, throwOnInvalid) {
+  var idToken = normalize(payload.lineIdToken);
+  if (!idToken) return { userId: '', displayName: '' };
+
+  try {
+    var response = UrlFetchApp.fetch('https://api.line.me/oauth2/v2.1/verify', {
+      method: 'post',
+      payload: {
+        id_token: idToken,
+        client_id: LINE_LOGIN_CHANNEL_ID
+      },
+      muteHttpExceptions: true
+    });
+    if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
+      if (throwOnInvalid) throw new Error('invalid LINE identity token');
+      return null;
+    }
+
+    var data = JSON.parse(response.getContentText() || '{}');
+    return {
+      userId: normalize(data.sub),
+      displayName: normalize(data.name)
+    };
+  } catch (err) {
+    if (throwOnInvalid) throw err;
+    return null;
+  }
+}
+
 function saveLeave(payload) {
   const date = normalize(payload.date);
   const memberId = normalize(payload.memberId);
   const memberName = normalize(payload.memberName);
   const gender = normalize(payload.gender);
-  const lineUserId = normalize(payload.lineUserId);
-  const lineDisplayName = normalize(payload.lineDisplayName);
+  const lineIdentity = verifyLineIdentityFromPayload(payload, false) || { userId: '', displayName: '' };
 
   if (!date || !memberId || !memberName) throw new Error('invalid leave payload');
   validateDateIsAvailable(date);
@@ -209,7 +239,7 @@ function saveLeave(payload) {
   });
   if (duplicate) return;
 
-  sheet.appendRow([date, memberId, memberName, gender, '請假', nowIso(), lineUserId, lineDisplayName]);
+  sheet.appendRow([date, memberId, memberName, gender, '請假', nowIso(), lineIdentity.userId, lineIdentity.displayName]);
 }
 
 function saveExtraSignup(payload) {
@@ -219,8 +249,7 @@ function saveExtraSignup(payload) {
   const femaleName = normalize(payload.femaleName);
   const note = normalize(payload.note);
   const pairMustTogether = normalize(payload.pairMustTogether).toLowerCase();
-  const lineUserId = normalize(payload.lineUserId);
-  const lineDisplayName = normalize(payload.lineDisplayName);
+  const lineIdentity = verifyLineIdentityFromPayload(payload, false) || { userId: '', displayName: '' };
 
   validateDateIsAvailable(date);
 
@@ -242,8 +271,8 @@ function saveExtraSignup(payload) {
     '0',
     nowIso(),
     '',
-    lineUserId,
-    lineDisplayName
+    lineIdentity.userId,
+    lineIdentity.displayName
   ]);
 }
 
