@@ -1,5 +1,6 @@
 ﻿const APP_CONFIG = {
   liffId: "2010159498-6XQaB49g",
+  siteBaseUrl: "https://fixitego.github.io/MondaySpike/",
   apiBaseUrl: "https://script.google.com/macros/s/AKfycbzYd5L6yfD3TEXaKSVpqE3pULd9UH0wcGg_DtFaNwUsO6TIDJ93UrGnpyI255INIQ1W/exec",
   apiMode: "live", // live | mock
   settlementTriggerToken: "CHANGE_ME_STRONG_TOKEN"
@@ -563,7 +564,9 @@ function applyConfigData(data) {
 }
 
 function goToDatePage(date) {
-  location.href = `./date.html?date=${encodeURIComponent(date)}`;
+  const target = new URL("date.html", APP_CONFIG.siteBaseUrl);
+  target.searchParams.set("date", date);
+  location.href = target.toString();
 }
 
 async function callApi(params) {
@@ -810,14 +813,14 @@ async function initLiffSafe() {
   if (!APP_CONFIG.liffId || APP_CONFIG.liffId.includes("YOUR_LIFF_ID")) return;
 
   try {
-    await window.liff.init({ liffId: APP_CONFIG.liffId });
+    await withTimeout(window.liff.init({ liffId: APP_CONFIG.liffId }), 5000);
     if (!window.liff.isLoggedIn()) {
       if (!window.liff.isInClient()) {
         window.liff.login({ redirectUri: location.href });
       }
       return;
     }
-    const profile = await window.liff.getProfile();
+    const profile = await withTimeout(window.liff.getProfile(), 5000);
     state.lineUserId = String(profile.userId || "").trim();
     state.lineDisplayName = String(profile.displayName || "").trim();
     state.lineIdToken = String(window.liff.getIDToken() || "").trim();
@@ -831,6 +834,13 @@ function withLineIdentity(params) {
     ...params,
     lineIdToken: state.lineIdToken
   };
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("LIFF timeout")), ms))
+  ]);
 }
 
 function getDateFromQuery() {
