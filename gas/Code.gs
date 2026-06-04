@@ -14,6 +14,9 @@ const ALLOW_USER_EDIT = true;
 const ALLOW_EDIT_PAST_DATE = false;
 const ENABLE_MANUAL_SETTLEMENT_TRIGGER = true;
 const SETTLEMENT_TRIGGER_TOKEN = 'fixitego';
+const ADMIN_LINE_USER_IDS = [
+  // 'Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+];
 
 function doGet(e) {
   try {
@@ -88,7 +91,7 @@ function doGet(e) {
 
     if (action === 'trigger_settlement') {
       assertEditableDate(normalize(e.parameter.date));
-      requireSettlementPermission(normalize(e.parameter.token));
+      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineUserId));
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
       triggerSettlement(date, 'manual_api_trigger');
@@ -132,7 +135,7 @@ function doPost(e) {
 
     if (action === 'trigger_settlement') {
       assertEditableDate(normalize(payload.date));
-      requireSettlementPermission(normalize(payload.token));
+      requireSettlementPermission(normalize(payload.token), normalize(payload.lineUserId));
       const date = normalize(payload.date);
       validateDateIsAvailable(date);
       triggerSettlement(date, 'manual_post_trigger');
@@ -172,9 +175,19 @@ function assertEditableDate(date) {
   }
 }
 
-function requireSettlementPermission(token) {
+function requireSettlementPermission(token, lineUserId) {
   if (!ENABLE_MANUAL_SETTLEMENT_TRIGGER) throw new Error('manual settlement trigger is disabled');
+  if (isAdminLineUser(lineUserId)) return;
   if (!token || token !== SETTLEMENT_TRIGGER_TOKEN) throw new Error('permission denied');
+}
+
+function isAdminLineUser(lineUserId) {
+  var id = normalize(lineUserId);
+  if (!id) return false;
+  for (var i = 0; i < ADMIN_LINE_USER_IDS.length; i += 1) {
+    if (normalize(ADMIN_LINE_USER_IDS[i]) === id) return true;
+  }
+  return false;
 }
 
 function saveLeave(payload) {
@@ -182,6 +195,8 @@ function saveLeave(payload) {
   const memberId = normalize(payload.memberId);
   const memberName = normalize(payload.memberName);
   const gender = normalize(payload.gender);
+  const lineUserId = normalize(payload.lineUserId);
+  const lineDisplayName = normalize(payload.lineDisplayName);
 
   if (!date || !memberId || !memberName) throw new Error('invalid leave payload');
   validateDateIsAvailable(date);
@@ -194,7 +209,7 @@ function saveLeave(payload) {
   });
   if (duplicate) return;
 
-  sheet.appendRow([date, memberId, memberName, gender, '請假', nowIso()]);
+  sheet.appendRow([date, memberId, memberName, gender, '請假', nowIso(), lineUserId, lineDisplayName]);
 }
 
 function saveExtraSignup(payload) {
@@ -204,6 +219,8 @@ function saveExtraSignup(payload) {
   const femaleName = normalize(payload.femaleName);
   const note = normalize(payload.note);
   const pairMustTogether = normalize(payload.pairMustTogether).toLowerCase();
+  const lineUserId = normalize(payload.lineUserId);
+  const lineDisplayName = normalize(payload.lineDisplayName);
 
   validateDateIsAvailable(date);
 
@@ -224,7 +241,9 @@ function saveExtraSignup(payload) {
     pairMustTogether === '1' || pairMustTogether === 'true' ? '1' : '0',
     '0',
     nowIso(),
-    ''
+    '',
+    lineUserId,
+    lineDisplayName
   ]);
 }
 
@@ -718,8 +737,8 @@ function validateMemberExists(memberId) {
 function bootstrapSheets() {
   ensureSheet(DATES_SHEET, ['date', 'label', 'enabled'], [[todayPlus(0), '本週一', '1'], [todayPlus(7), '下週一', '1']]);
   ensureSheet(MEMBERS_SHEET, ['memberId', 'memberName', 'gender', 'enabled'], [['M001', '王小明', '男', '1'], ['M002', '林小美', '女', '1']]);
-  ensureSheet(LEAVE_SHEET, ['date', 'memberId', 'memberName', 'gender', 'status', 'createdAt']);
-  ensureSheet(EXTRA_SHEET, ['signupId', 'date', 'type', 'maleName', 'femaleName', 'note', 'pairMustTogether', 'isCanceled', 'createdAt', 'canceledAt']);
+  ensureSheet(LEAVE_SHEET, ['date', 'memberId', 'memberName', 'gender', 'status', 'createdAt', 'lineUserId', 'lineDisplayName']);
+  ensureSheet(EXTRA_SHEET, ['signupId', 'date', 'type', 'maleName', 'femaleName', 'note', 'pairMustTogether', 'isCanceled', 'createdAt', 'canceledAt', 'lineUserId', 'lineDisplayName']);
   ensureSheet(FINAL_SHEET, ['date', 'name', 'gender', 'source', 'signupId']);
   ensureSheet(SETTLE_SHEET, ['date', 'settleAt(YYYY-MM-DD HH:mm)', 'settled(0/1)', 'settledAt', 'triggerNote']);
 }

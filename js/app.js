@@ -10,6 +10,8 @@ const state = {
   dateSet: new Set(),
   fixedMembers: [],
   leaveMemberIds: new Set(),
+  lineUserId: "",
+  lineDisplayName: "",
   policy: { allowUserEdit: true, allowEditPastDate: false, enableManualSettlementTrigger: true, today: "" },
   currentDate: "",
   isDateLocked: false
@@ -138,7 +140,7 @@ function renderFixedMembers(date) {
       button.disabled = true;
       button.textContent = "送出中...";
       try {
-        await callApi({ action: "leave", date, memberId: member.id, memberName: member.name, gender: member.gender });
+        await callApi(withLineIdentity({ action: "leave", date, memberId: member.id, memberName: member.name, gender: member.gender }));
         markMemberLeave(member.id);
         button.textContent = "已送出";
         await loadPageData(date);
@@ -224,7 +226,7 @@ function bindExtraForm(date) {
 
     submitBtn.disabled = true;
     try {
-      await callApi({ action: "extra_signup", date, extraType, maleName, femaleName, note, pairMustTogether });
+      await callApi(withLineIdentity({ action: "extra_signup", date, extraType, maleName, femaleName, note, pairMustTogether }));
       form.reset();
       document.getElementById("extraType").value = "MALE";
       bindExtraTypeBehavior();
@@ -275,13 +277,13 @@ function bindSettlementButton(date) {
   }
 
   btn.addEventListener("click", async () => {
-    const token = await uiPrompt("請輸入結算觸發碼");
-    if (!token) return;
+    const token = await uiPrompt("請輸入結算觸發碼。管理員 LINE 帳號可留空直接送出。");
+    if (!token && !state.lineUserId) return;
     if (!(await uiConfirm("確定現在要觸發結算嗎？觸發後會開始用額外報名補位。"))) return;
 
     btn.disabled = true;
     try {
-      await callApi({ action: "trigger_settlement", date, token });
+      await callApi(withLineIdentity({ action: "trigger_settlement", date, token }));
       await loadPageData(date);
     } catch (error) {
       uiAlert(`觸發結算失敗：${error.message}`);
@@ -331,13 +333,13 @@ function renderFinalList(records) {
     `<tr class="${cls}"><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.gender)}</td><td>${escapeHtml(r.source)}</td></tr>`;
 
   let html = "";
-  if (maleRows.length) {
-    html += `<tr class="group-row"><td colspan="3">男生名單</td></tr>`;
-    html += maleRows.map((r) => renderRow(r, "gender-male")).join("");
-  }
   if (femaleRows.length) {
     html += `<tr class="group-row"><td colspan="3">女生名單</td></tr>`;
     html += femaleRows.map((r) => renderRow(r, "gender-female")).join("");
+  }
+  if (maleRows.length) {
+    html += `<tr class="group-row"><td colspan="3">男生名單</td></tr>`;
+    html += maleRows.map((r) => renderRow(r, "gender-male")).join("");
   }
   if (otherRows.length) {
     html += `<tr class="group-row"><td colspan="3">其他</td></tr>`;
@@ -439,13 +441,13 @@ async function loadFinalList(date) {
       `<tr class="${cls}"><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.gender)}</td><td>${escapeHtml(r.source)}</td></tr>`;
 
     let html = "";
-    if (maleRows.length) {
-      html += `<tr class="group-row"><td colspan="3">男生名單</td></tr>`;
-      html += maleRows.map((r) => renderRow(r, "gender-male")).join("");
-    }
     if (femaleRows.length) {
       html += `<tr class="group-row"><td colspan="3">女生名單</td></tr>`;
       html += femaleRows.map((r) => renderRow(r, "gender-female")).join("");
+    }
+    if (maleRows.length) {
+      html += `<tr class="group-row"><td colspan="3">男生名單</td></tr>`;
+      html += maleRows.map((r) => renderRow(r, "gender-male")).join("");
     }
     if (otherRows.length) {
       html += `<tr class="group-row"><td colspan="3">其他</td></tr>`;
@@ -613,7 +615,12 @@ async function mockApi(params) {
       .map((m) => ({ name: m.name, gender: m.gender, source: "固定名單" }));
 
     if (settled) {
-      const extras = getMockExtras(date);
+      const extras = getMockExtras(date).sort((a, b) => {
+        const wa = mockExtraTypeWeight(a.type);
+        const wb = mockExtraTypeWeight(b.type);
+        if (wa !== wb) return wa - wb;
+        return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+      });
       for (const ex of extras) {
         if (fixed.length >= 18) break;
         if (ex.type === "MALE") fixed.push({ name: ex.maleName, gender: "男", source: "額外報名" });
@@ -625,8 +632,8 @@ async function mockApi(params) {
               fixed.push({ name: ex.femaleName, gender: "女", source: "額外報名(配對)" });
             }
           } else {
-            fixed.push({ name: ex.maleName, gender: "男", source: "額外報名(配對-男)" });
-            if (fixed.length < 18) fixed.push({ name: ex.femaleName, gender: "女", source: "額外報名(配對-女)" });
+            fixed.push({ name: ex.femaleName, gender: "女", source: "額外報名(配對-女)" });
+            if (fixed.length < 18) fixed.push({ name: ex.maleName, gender: "男", source: "額外報名(配對-男)" });
           }
         }
       }
@@ -636,7 +643,15 @@ async function mockApi(params) {
   }
 
   if (params.action === "extra_list") {
-    return { ok: true, records: getMockExtras(date) };
+    return {
+      ok: true,
+      records: getMockExtras(date).sort((a, b) => {
+        const wa = mockExtraTypeWeight(a.type);
+        const wb = mockExtraTypeWeight(b.type);
+        if (wa !== wb) return wa - wb;
+        return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+      })
+    };
   }
 
   if (params.action === "settlement_status") {
@@ -710,6 +725,13 @@ function parseCsvText(text) {
 function isTruthyFlag(value) {
   const v = String(value || "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "y";
+}
+
+function mockExtraTypeWeight(type) {
+  if (type === "FEMALE") return 1;
+  if (type === "PAIR") return 2;
+  if (type === "MALE") return 3;
+  return 9;
 }
 
 function mockKey(type, date) {
@@ -788,9 +810,24 @@ async function initLiffSafe() {
 
   try {
     await window.liff.init({ liffId: APP_CONFIG.liffId });
+    if (!window.liff.isLoggedIn()) {
+      window.liff.login();
+      return;
+    }
+    const profile = await window.liff.getProfile();
+    state.lineUserId = String(profile.userId || "").trim();
+    state.lineDisplayName = String(profile.displayName || "").trim();
   } catch (error) {
     console.warn("LIFF init failed:", error);
   }
+}
+
+function withLineIdentity(params) {
+  return {
+    ...params,
+    lineUserId: state.lineUserId,
+    lineDisplayName: state.lineDisplayName
+  };
 }
 
 function getDateFromQuery() {

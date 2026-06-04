@@ -13,6 +13,13 @@
 - `ALLOW_USER_EDIT`：是否允許使用者送請假/額外報名/取消
 - `ENABLE_MANUAL_SETTLEMENT_TRIGGER`：是否允許手動觸發結算
 - `SETTLEMENT_TRIGGER_TOKEN`：手動觸發結算碼（前端會提示輸入）
+- `ADMIN_LINE_USER_IDS`：可免輸入結算碼的 LINE 使用者 ID 白名單
+
+LIFF 會在請假、額外報名、觸發結算時帶入：
+- `lineUserId`
+- `lineDisplayName`
+
+若 `lineUserId` 在 `ADMIN_LINE_USER_IDS` 內，可直接觸發結算；若不是管理員，仍可輸入 `SETTLEMENT_TRIGGER_TOKEN` 觸發。
 
 ## 主要規則
 
