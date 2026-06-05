@@ -668,22 +668,27 @@ function handleLineWebhook(payload) {
       var text = normalize(event.message && event.message.text);
       appendLineWebhookLog(source, text, 'received', '');
       if (!event.replyToken || !text) continue;
-      if (isGroupLikeSource(source) && !isBotMentioned(event.message)) {
+      if (!isBotMentioned(event.message)) {
         appendLineWebhookLog(source, text, 'ignored_no_bot_mention', '');
         continue;
       }
 
-      if (isOpenSignupCommand(text)) {
-        var openDate = extractDateFromText(text);
-        if (!openDate) throw new Error('date required for open signup command');
-        upsertAvailableDateFromBot(openDate);
-        replyLineMessage(event.replyToken, [buildOpenSignupReplyMessage(openDate)]);
-        appendLineWebhookLog(source, text, 'reply_open_signup', openDate);
+      var commandText = getBotCommandText(event.message);
+      var command = parseBotCommand(commandText);
+      if (!command.type) {
+        appendLineWebhookLog(source, text, 'ignored_unknown_command', commandText);
         continue;
       }
 
-      if (isFinalListCommand(text)) {
-        var date = extractDateFromText(text) || getDefaultPushDate();
+      if (command.type === 'open_signup') {
+        upsertAvailableDateFromBot(command.date);
+        replyLineMessage(event.replyToken, [buildOpenSignupReplyMessage(command.date)]);
+        appendLineWebhookLog(source, text, 'reply_open_signup', command.date);
+        continue;
+      }
+
+      if (command.type === 'final_list') {
+        var date = command.date || getDefaultPushDate();
         validateDateIsAvailable(date);
         rebuildFinalListIfScheduledSettlementDue(date);
         replyLineMessage(event.replyToken, [buildFinalListWithWaitlistFlexMessage(date)]);
@@ -691,7 +696,7 @@ function handleLineWebhook(payload) {
         continue;
       }
 
-      if (isLiffEntryCommand(text)) {
+      if (command.type === 'liff_entry') {
         replyLineMessage(event.replyToken, [buildLiffEntryFlexMessage()]);
         appendLineWebhookLog(source, text, 'reply_liff_entry', '');
       } else {
@@ -705,12 +710,11 @@ function handleLineWebhook(payload) {
 }
 
 function isLiffEntryCommand(text) {
-  var normalized = normalize(text).toLowerCase();
-  return text.indexOf('報名') >= 0 || text.indexOf('連義華') >= 0 || normalized.indexOf('liff') >= 0;
+  return parseBotCommand(text).type === 'liff_entry';
 }
 
 function isOpenSignupCommand(text) {
-  return text.indexOf('開始報名') >= 0 || text.indexOf('開放報名') >= 0;
+  return parseBotCommand(text).type === 'open_signup';
 }
 
 function isGroupLikeSource(source) {
@@ -728,16 +732,73 @@ function isBotMentioned(message) {
 }
 
 function isFinalListCommand(text) {
-  return text.indexOf('名單') >= 0 || text.indexOf('結算') >= 0;
+  return parseBotCommand(text).type === 'final_list';
 }
 
 function extractDateFromText(text) {
-  var value = normalize(text);
-  var isoMatch = value.match(/\d{4}-\d{1,2}-\d{1,2}/);
-  if (isoMatch) return normalizeDateParts(isoMatch[0].split('-')[0], isoMatch[0].split('-')[1], isoMatch[0].split('-')[2]);
+  var parsed = parseDateToken(normalize(text).replace(/\s+/g, ''));
+  if (parsed) return parsed;
+  return '';
+}
 
-  var slashMatch = value.match(/(\d{1,2})\s*[\/月]\s*(\d{1,2})/);
+function getBotCommandText(message) {
+  var text = normalize(message && message.text);
+  var mentionees = message && message.mention && message.mention.mentionees;
+  if (!mentionees || !mentionees.length) return text;
+
+  var ranges = [];
+  for (var i = 0; i < mentionees.length; i += 1) {
+    var mentionee = mentionees[i];
+    if (!mentionee || mentionee.isSelf !== true) continue;
+    var index = Number(mentionee.index);
+    var length = Number(mentionee.length);
+    if (!isNaN(index) && !isNaN(length) && length > 0) ranges.push({ index: index, length: length });
+  }
+
+  ranges.sort(function (a, b) {
+    return b.index - a.index;
+  });
+  for (var j = 0; j < ranges.length; j += 1) {
+    text = text.substring(0, ranges[j].index) + text.substring(ranges[j].index + ranges[j].length);
+  }
+
+  return normalize(text.replace(/^@\S+\s*/, ''));
+}
+
+function parseBotCommand(text) {
+  var command = normalize(text).replace(/\s+/g, '');
+  if (!command) return { type: '', date: '' };
+
+  var openMatch = command.match(/^(.+?)(開始報名|開放報名)$/);
+  if (openMatch) {
+    var openDate = parseDateToken(openMatch[1]);
+    return openDate ? { type: 'open_signup', date: openDate } : { type: '', date: '' };
+  }
+
+  if (/^(名單|結算名單|結算)$/.test(command)) return { type: 'final_list', date: '' };
+
+  var finalMatch = command.match(/^(.+?)(?:結算)?名單$/);
+  if (finalMatch) {
+    var finalDate = parseDateToken(finalMatch[1]);
+    return finalDate ? { type: 'final_list', date: finalDate } : { type: '', date: '' };
+  }
+
+  if (/^(報名|連義華|liff)$/i.test(command)) return { type: 'liff_entry', date: '' };
+
+  return { type: '', date: '' };
+}
+
+function parseDateToken(token) {
+  var value = normalize(token).replace(/\s+/g, '');
+  var isoMatch = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) return normalizeDateParts(isoMatch[1], isoMatch[2], isoMatch[3]);
+
+  var slashMatch = value.match(/^(\d{1,2})\/(\d{1,2})$/);
   if (slashMatch) return normalizeDateParts(todayDateStr().split('-')[0], slashMatch[1], slashMatch[2]);
+
+  var monthMatch = value.match(/^(\d{1,2})月(\d{1,2})日?$/);
+  if (monthMatch) return normalizeDateParts(todayDateStr().split('-')[0], monthMatch[1], monthMatch[2]);
+
   return '';
 }
 
@@ -831,7 +892,7 @@ function buildFinalListFlexMessage(date) {
   contents.push({
     type: 'button',
     style: 'link',
-    action: { type: 'uri', label: '查看報名頁', uri: getLineLiffUrl() }
+    action: { type: 'uri', label: '查看報名頁', uri: getLineLiffUrlForDate(date) }
   });
 
   return {
@@ -895,7 +956,7 @@ function buildOpenSignupReplyMessage(date) {
             type: 'button',
             style: 'primary',
             color: '#7AA68F',
-            action: { type: 'uri', label: '開啟報名頁', uri: getLineLiffUrl() }
+            action: { type: 'uri', label: '開啟報名頁', uri: getLineLiffUrlForDate(date) }
           }
         ]
       }
@@ -915,10 +976,16 @@ function buildFinalListSection(title, rows, color) {
 
   var names = [];
   for (var i = 0; i < rows.length; i += 1) {
-    names.push((i + 1) + '. ' + rows[i].name);
+    names.push((i + 1) + '. ' + formatFinalListName(rows[i]));
   }
   out.push({ type: 'text', text: names.join('\n'), wrap: true, size: 'sm', color: '#26342F' });
   return out;
+}
+
+function formatFinalListName(row) {
+  var source = normalize(row && row.source);
+  var suffix = source.indexOf('額外報名') === 0 ? '（補上）' : '';
+  return normalize(row && row.name) + suffix;
 }
 
 function replyLineMessage(replyToken, messages) {
@@ -1004,6 +1071,12 @@ function getLineLoginChannelId() {
 
 function getLineLiffUrl() {
   return getRequiredScriptProperty(LINE_LIFF_URL_PROPERTY);
+}
+
+function getLineLiffUrlForDate(date) {
+  var base = getLineLiffUrl();
+  var separator = base.indexOf('?') >= 0 ? '&' : '?';
+  return base + separator + 'date=' + encodeURIComponent(normalize(date));
 }
 
 function getAdminLineUserIds() {
@@ -1294,6 +1367,8 @@ function normalizeDateParts(year, month, day) {
   var m = Number(month);
   var d = Number(day);
   if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31) return '';
+  var date = new Date(y, m - 1, d);
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return '';
   return String(y).padStart(4, '0') + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
 }
 

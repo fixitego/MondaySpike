@@ -35,6 +35,13 @@ function isIndexPage() { return !!document.getElementById("dateList"); }
 function isDatePage() { return !!document.getElementById("memberListMale"); }
 
 async function initIndexPage() {
+  const dateFromQuery = getDateFromQuery();
+  if (dateFromQuery) {
+    showGlobalLoading();
+    goToDatePage(dateFromQuery);
+    return;
+  }
+
   const goDateBtn = document.getElementById("goDateBtn");
   goDateBtn.addEventListener("click", () => {
     const selected = getSelectedCustomDate();
