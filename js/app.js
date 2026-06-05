@@ -840,9 +840,7 @@ async function initLiffSafe() {
     state.liffStatus.inClient = window.liff.isInClient();
     state.liffStatus.loggedIn = window.liff.isLoggedIn();
     if (!window.liff.isLoggedIn()) {
-      if (isIndexPage() && !window.liff.isInClient()) {
-        window.liff.login({ redirectUri: location.href });
-      }
+      window.liff.login({ redirectUri: location.href });
       renderLiffDebug();
       return;
     }
