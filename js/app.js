@@ -14,6 +14,7 @@ const state = {
   lineUserId: "",
   lineDisplayName: "",
   lineIdToken: "",
+  liffStatus: { sdk: false, initialized: false, inClient: false, loggedIn: false, profileReady: false, idTokenReady: false, error: "" },
   policy: { allowUserEdit: true, allowEditPastDate: false, enableManualSettlementTrigger: true, today: "" },
   currentDate: "",
   isDateLocked: false
@@ -816,23 +817,53 @@ function ensureApiConfigured() {
 }
 
 async function initLiffSafe() {
-  if (!window.liff) return;
-  if (!APP_CONFIG.liffId || APP_CONFIG.liffId.includes("YOUR_LIFF_ID")) return;
+  state.liffStatus.sdk = !!window.liff;
+  if (!window.liff) {
+    state.liffStatus.error = "LIFF SDK 未載入";
+    renderLiffDebug();
+    return;
+  }
+  if (!APP_CONFIG.liffId || APP_CONFIG.liffId.includes("YOUR_LIFF_ID")) {
+    state.liffStatus.error = "LIFF ID 尚未設定";
+    renderLiffDebug();
+    return;
+  }
 
   try {
     await withTimeout(window.liff.init({ liffId: APP_CONFIG.liffId }), 5000);
+    state.liffStatus.initialized = true;
+    state.liffStatus.inClient = window.liff.isInClient();
+    state.liffStatus.loggedIn = window.liff.isLoggedIn();
     if (!window.liff.isLoggedIn()) {
       if (isIndexPage() && !window.liff.isInClient()) {
         window.liff.login({ redirectUri: location.href });
       }
+      renderLiffDebug();
       return;
     }
-    const profile = await withTimeout(window.liff.getProfile(), 5000);
-    state.lineUserId = String(profile.userId || "").trim();
-    state.lineDisplayName = String(profile.displayName || "").trim();
+
     state.lineIdToken = String(window.liff.getIDToken() || "").trim();
+    state.liffStatus.idTokenReady = !!state.lineIdToken;
+
+    const decoded = typeof window.liff.getDecodedIDToken === "function" ? window.liff.getDecodedIDToken() : null;
+    if (decoded) {
+      state.lineUserId = String(decoded.sub || "").trim();
+      state.lineDisplayName = String(decoded.name || "").trim();
+    }
+
+    try {
+      const profile = await withTimeout(window.liff.getProfile(), 5000);
+      state.lineUserId = String(profile.userId || state.lineUserId || "").trim();
+      state.lineDisplayName = String(profile.displayName || state.lineDisplayName || "").trim();
+      state.liffStatus.profileReady = !!state.lineUserId;
+    } catch (profileError) {
+      state.liffStatus.error = `getProfile 失敗：${profileError.message || profileError}`;
+    }
   } catch (error) {
+    state.liffStatus.error = error.message || String(error);
     console.warn("LIFF init failed:", error);
+  } finally {
+    renderLiffDebug();
   }
 }
 
@@ -862,7 +893,30 @@ async function ensureLiffIdentityReady(required) {
     }
   }
 
-  throw new Error("無法取得 LINE 身分，請從 LINE LIFF 入口開啟頁面後再操作");
+  throw new Error(`無法取得 LINE 身分，請從 LINE LIFF 入口開啟頁面後再操作。${buildLiffStatusText()}`);
+}
+
+function buildLiffStatusText() {
+  const s = state.liffStatus || {};
+  return `目前狀態：sdk=${!!s.sdk}, init=${!!s.initialized}, inClient=${!!s.inClient}, loggedIn=${!!s.loggedIn}, profile=${!!s.profileReady}, idToken=${!!s.idTokenReady}${s.error ? `, error=${s.error}` : ""}`;
+}
+
+function renderLiffDebug() {
+  if (!new URLSearchParams(location.search).has("debug")) return;
+  let box = document.getElementById("liffDebugBox");
+  if (!box) {
+    box = document.createElement("pre");
+    box.id = "liffDebugBox";
+    box.className = "liff-debug-box";
+    document.body.appendChild(box);
+  }
+  box.textContent = [
+    "LIFF DEBUG",
+    buildLiffStatusText(),
+    `lineUserId=${state.lineUserId || "(empty)"}`,
+    `lineDisplayName=${state.lineDisplayName || "(empty)"}`,
+    `url=${location.href}`
+  ].join("\n");
 }
 
 function withTimeout(promise, ms) {
