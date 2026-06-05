@@ -85,7 +85,8 @@ async function initDatePage() {
   const date = getDateFromQuery();
   const pageError = document.getElementById("pageError");
 
-  showGlobalLoading();
+  setDatePageLoading(true);
+  showGlobalLoading("同步報名資料...");
   try {
     await loadControlConfig(false);
 
@@ -104,16 +105,16 @@ async function initDatePage() {
       ? `日期：${date}（已過期，僅可檢視資料）`
       : `日期：${date}`;
 
-    renderFixedMembers(date);
     bindExtraForm(date);
     bindRefreshButtons(date);
     bindSettlementButton(date);
     bindExtraTypeBehavior();
     applyDateLockToInputs();
 
-    hideGlobalLoading();
     await loadPageData(date);
+    setDatePageLoading(false);
   } catch (error) {
+    setDatePageLoading(false);
     pageError.hidden = false;
     pageError.textContent = `載入失敗：${error.message}`;
     lockDatePageActions();
@@ -864,9 +865,12 @@ function getDateFromQuery() {
   return String(new URLSearchParams(location.search).get("date") || "").trim();
 }
 
-function showGlobalLoading() {
+function showGlobalLoading(message) {
   const el = document.getElementById("globalLoading");
-  if (el) el.hidden = false;
+  if (!el) return;
+  const text = el.querySelector("[data-loading-text]");
+  if (text && message) text.textContent = message;
+  el.hidden = false;
 }
 
 function applyLeaveState(leaveMemberIds) {
@@ -877,6 +881,11 @@ function applyLeaveState(leaveMemberIds) {
 function hideGlobalLoading() {
   const el = document.getElementById("globalLoading");
   if (el) el.hidden = true;
+}
+
+function setDatePageLoading(isLoading) {
+  if (!isDatePage()) return;
+  document.body.classList.toggle("is-loading-data", !!isLoading);
 }
 
 function ensureUiModalRoot() {

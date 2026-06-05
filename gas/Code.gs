@@ -6,9 +6,12 @@ const EXTRA_SHEET = 'extra_signups';
 const FINAL_SHEET = 'final_list';
 const SETTLE_SHEET = 'settlement_control';
 const LINE_GROUPS_SHEET = 'line_groups';
+const LINE_WEBHOOK_LOGS_SHEET = 'line_webhook_logs';
 
 const TOTAL_LIMIT = 18;
 const FEMALE_LIMIT = 9;
+const LINE_SOURCE_CAPTURE_PROPERTY = 'ENABLE_LINE_SOURCE_CAPTURE';
+const LINE_WEBHOOK_LOG_PROPERTY = 'ENABLE_LINE_WEBHOOK_LOG';
 
 // 安全控制（寫死在程式）
 const ALLOW_USER_EDIT = true;
@@ -36,7 +39,7 @@ function doGet(e) {
     if (action === 'page_data') {
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
-      rebuildFinalListForDate(date);
+      rebuildFinalListIfScheduledSettlementDue(date);
       return jsonOutput({
         ok: true,
         records: getFinalListByDate(date),
@@ -50,7 +53,7 @@ function doGet(e) {
     if (action === 'final_list') {
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
-      rebuildFinalListForDate(date);
+      rebuildFinalListIfScheduledSettlementDue(date);
       return jsonOutput({ ok: true, records: getFinalListByDate(date) });
     }
 
@@ -108,7 +111,7 @@ function doGet(e) {
       requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken));
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
-      rebuildFinalListForDate(date);
+      rebuildFinalListIfScheduledSettlementDue(date);
       pushFinalListFlexMessage(date, normalize(e.parameter.groupId));
       return jsonOutput({ ok: true });
     }
@@ -121,13 +124,13 @@ function doGet(e) {
 
 function doPost(e) {
   try {
-    bootstrapSheets();
     const payload = JSON.parse(e.postData.contents || '{}');
     if (payload.events && !payload.action) {
       handleLineWebhook(payload);
       return jsonOutput({ ok: true });
     }
 
+    bootstrapSheets();
     const action = normalize(payload.action);
 
     if (action === 'leave') {
@@ -166,7 +169,7 @@ function doPost(e) {
       requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken));
       const date = normalize(payload.date);
       validateDateIsAvailable(date);
-      rebuildFinalListForDate(date);
+      rebuildFinalListIfScheduledSettlementDue(date);
       pushFinalListFlexMessage(date, normalize(payload.groupId));
       return jsonOutput({ ok: true });
     }
@@ -359,6 +362,10 @@ function rebuildFinalListForDate(date) {
 
   finalSheet.clearContents();
   finalSheet.getRange(1, 1, output.length, 5).setValues(output);
+}
+
+function rebuildFinalListIfScheduledSettlementDue(date) {
+  if (autoTriggerSettlementIfDue(date)) rebuildFinalListForDate(date);
 }
 
 function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
@@ -634,29 +641,40 @@ function getAuditLogsByDate(date) {
 function handleLineWebhook(payload) {
   var events = payload.events || [];
   for (var i = 0; i < events.length; i += 1) {
-    var event = events[i];
-    saveLineSource(event.source || {});
+    try {
+      var event = events[i];
+      var source = event.source || {};
+      if (isScriptPropertyEnabled(LINE_SOURCE_CAPTURE_PROPERTY)) saveLineSource(source);
 
-    var text = normalize(event.message && event.message.text);
-    if (!event.replyToken || !text) continue;
+      var text = normalize(event.message && event.message.text);
+      appendLineWebhookLog(source, text, 'received', '');
+      if (!event.replyToken || !text) continue;
 
-    if (isFinalListCommand(text)) {
-      var date = extractDateFromText(text) || getDefaultPushDate();
-      validateDateIsAvailable(date);
-      rebuildFinalListForDate(date);
-      replyLineMessage(event.replyToken, [buildFinalListFlexMessage(date)]);
-      continue;
-    }
+      if (isFinalListCommand(text)) {
+        var date = extractDateFromText(text) || getDefaultPushDate();
+        validateDateIsAvailable(date);
+        rebuildFinalListIfScheduledSettlementDue(date);
+        replyLineMessage(event.replyToken, [buildFinalListFlexMessage(date)]);
+        appendLineWebhookLog(source, text, 'reply_final_list', date);
+        continue;
+      }
 
-    if (isLiffEntryCommand(text)) {
-      replyLineMessage(event.replyToken, [buildLiffEntryFlexMessage()]);
+      if (isLiffEntryCommand(text)) {
+        replyLineMessage(event.replyToken, [buildLiffEntryFlexMessage()]);
+        appendLineWebhookLog(source, text, 'reply_liff_entry', '');
+      } else {
+        appendLineWebhookLog(source, text, 'ignored', '');
+      }
+    } catch (err) {
+      appendLineWebhookLog((events[i] && events[i].source) || {}, normalize(events[i] && events[i].message && events[i].message.text), 'error', String(err));
+      throw err;
     }
   }
 }
 
 function isLiffEntryCommand(text) {
   var normalized = normalize(text).toLowerCase();
-  return text.indexOf('報名') >= 0 || text.indexOf('連義華') >= 0 || normalized === 'liff';
+  return text.indexOf('報名') >= 0 || text.indexOf('連義華') >= 0 || normalized.indexOf('liff') >= 0;
 }
 
 function isFinalListCommand(text) {
@@ -692,6 +710,20 @@ function saveLineSource(source) {
     }
   }
   sheet.appendRow([sourceType, sourceId, normalize(source.userId), nowIso(), '']);
+}
+
+function appendLineWebhookLog(source, text, action, detail) {
+  if (!isScriptPropertyEnabled(LINE_WEBHOOK_LOG_PROPERTY)) return;
+  var sheet = getSheet(LINE_WEBHOOK_LOGS_SHEET);
+  sheet.appendRow([
+    nowIso(),
+    normalize(source && source.type),
+    normalize(source && (source.groupId || source.roomId || source.userId)),
+    normalize(source && source.userId),
+    normalize(text),
+    normalize(action),
+    normalize(detail)
+  ]);
 }
 
 function buildLiffEntryFlexMessage() {
@@ -805,6 +837,7 @@ function callLineMessagingApi(url, payload) {
     muteHttpExceptions: true
   });
   if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
+    appendLineWebhookLog({}, '', 'line_api_failed', response.getResponseCode() + ' ' + response.getContentText());
     throw new Error('LINE Messaging API failed: ' + response.getResponseCode() + ' ' + response.getContentText());
   }
 }
@@ -817,6 +850,11 @@ function getLineChannelAccessToken() {
 
 function getDefaultLineGroupId() {
   return normalize(PropertiesService.getScriptProperties().getProperty(LINE_DEFAULT_GROUP_ID_PROPERTY));
+}
+
+function isScriptPropertyEnabled(name) {
+  var value = normalize(PropertiesService.getScriptProperties().getProperty(name)).toLowerCase();
+  return ['1', 'true', 'yes', 'y', 'on'].indexOf(value) >= 0;
 }
 
 function buildExtraDetail(type, maleName, femaleName) {
@@ -926,10 +964,14 @@ function triggerSettlement(date, note) {
 function autoTriggerSettlementIfDue(date) {
   var info = getSettlementRow(date, true);
   var row = info.row;
-  if (normalize(row[2]) === '1') return;
+  if (normalize(row[2]) === '1') return false;
   var settleAt = normalize(row[1]);
-  if (!settleAt) return;
-  if (nowIsoMinute() >= settleAt) triggerSettlement(date, 'auto_schedule_trigger');
+  if (!settleAt) return false;
+  if (nowIsoMinute() >= settleAt) {
+    triggerSettlement(date, 'auto_schedule_trigger');
+    return true;
+  }
+  return false;
 }
 
 function getSettlementRow(date, createIfMissing) {
@@ -995,6 +1037,7 @@ function bootstrapSheets() {
   ensureSheet(FINAL_SHEET, ['date', 'name', 'gender', 'source', 'signupId']);
   ensureSheet(SETTLE_SHEET, ['date', 'settleAt(YYYY-MM-DD HH:mm)', 'settled(0/1)', 'settledAt', 'triggerNote']);
   ensureSheet(LINE_GROUPS_SHEET, ['sourceType', 'sourceId', 'lastUserId', 'lastSeenAt', 'note']);
+  ensureSheet(LINE_WEBHOOK_LOGS_SHEET, ['createdAt', 'sourceType', 'sourceId', 'userId', 'text', 'action', 'detail']);
 }
 
 function ensureSheet(name, headers, seedRows) {

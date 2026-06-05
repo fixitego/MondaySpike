@@ -502,6 +502,12 @@ tr.gender-female td { background: rgba(253, 242, 247, 0.82); }
 
 .global-loading[hidden] { display: none !important; }
 
+.page-date.is-loading-data .container,
+.page-date.is-loading-data .site-footer {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .loading-panel {
   width: min(360px, 86vw);
   border: 1px solid #d5e3da;
