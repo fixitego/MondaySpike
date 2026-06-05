@@ -146,7 +146,7 @@ function renderFixedMembers(date) {
       button.disabled = true;
       button.textContent = "送出中...";
       try {
-        await ensureLiffIdentityReady();
+        await ensureLiffIdentityReady(true);
         await callApi(withLineIdentity({ action: "leave", date, memberId: member.id, memberName: member.name, gender: member.gender }));
         markMemberLeave(member.id);
         button.textContent = "已送出";
@@ -233,7 +233,7 @@ function bindExtraForm(date) {
 
     submitBtn.disabled = true;
     try {
-      await ensureLiffIdentityReady();
+      await ensureLiffIdentityReady(true);
       await callApi(withLineIdentity({ action: "extra_signup", date, extraType, maleName, femaleName, note, pairMustTogether }));
       form.reset();
       document.getElementById("extraType").value = "MALE";
@@ -845,13 +845,24 @@ function withLineIdentity(params) {
   };
 }
 
-async function ensureLiffIdentityReady() {
-  if (!liffReadyPromise) return;
+async function ensureLiffIdentityReady(required) {
+  if (!liffReadyPromise && required) throw new Error("請從 LINE LIFF 入口開啟頁面後再操作");
   try {
-    await liffReadyPromise;
+    if (liffReadyPromise) await liffReadyPromise;
   } catch (error) {
     console.warn("LIFF identity not ready:", error);
   }
+
+  if (!required || state.lineUserId) return;
+
+  if (window.liff && typeof window.liff.isLoggedIn === "function" && !window.liff.isLoggedIn()) {
+    if (typeof window.liff.login === "function") {
+      window.liff.login({ redirectUri: location.href });
+      throw new Error("正在導向 LINE 登入，請登入後再送出");
+    }
+  }
+
+  throw new Error("無法取得 LINE 身分，請從 LINE LIFF 入口開啟頁面後再操作");
 }
 
 function withTimeout(promise, ms) {
