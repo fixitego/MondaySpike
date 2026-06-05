@@ -892,7 +892,7 @@ function buildFinalListFlexMessage(date) {
   contents.push({
     type: 'button',
     style: 'link',
-    action: { type: 'uri', label: '查看報名頁', uri: getLineLiffUrlForDate(date) }
+    action: { type: 'uri', label: '查看報名頁', uri: getLineLiffUrl() }
   });
 
   return {
@@ -956,7 +956,7 @@ function buildOpenSignupReplyMessage(date) {
             type: 'button',
             style: 'primary',
             color: '#7AA68F',
-            action: { type: 'uri', label: '開啟報名頁', uri: getLineLiffUrlForDate(date) }
+            action: { type: 'uri', label: '開啟報名頁', uri: getLineLiffUrl() }
           }
         ]
       }
@@ -1071,12 +1071,6 @@ function getLineLoginChannelId() {
 
 function getLineLiffUrl() {
   return getRequiredScriptProperty(LINE_LIFF_URL_PROPERTY);
-}
-
-function getLineLiffUrlForDate(date) {
-  var base = getLineLiffUrl();
-  var separator = base.indexOf('?') >= 0 ? '&' : '?';
-  return base + separator + 'date=' + encodeURIComponent(normalize(date));
 }
 
 function getAdminLineUserIds() {
