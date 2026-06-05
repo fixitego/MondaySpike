@@ -17,7 +17,7 @@ const ENABLE_MANUAL_SETTLEMENT_TRIGGER = true;
 const SETTLEMENT_TRIGGER_TOKEN = 'fixitego';
 const LINE_LOGIN_CHANNEL_ID = '2010159498';
 const LINE_LIFF_URL = 'https://liff.line.me/2010159498-6XQaB49g';
-const LINE_CHANNEL_ACCESS_TOKEN_PROPERTY = '860334fc49f8828296e5e210f25885a9';
+const LINE_CHANNEL_ACCESS_TOKEN_PROPERTY = 'HsjejehgGwnHf9uTRcld1+W38GmmjJdfgxSRa2vz6jaDZmaeW2yHG8NNvzCRUYz0Wx+1vJpMVUtC1zIy8pQ2rQLp5dw5eDu7iQ2I1kDvf4OGHhNfUS1Yp72EbNpt9ph92FO3Hw0xSNqciosWSXaiYgdB04t89/1O/w1cDnyilFU=';
 const LINE_DEFAULT_GROUP_ID_PROPERTY = 'LINE_DEFAULT_GROUP_ID';
 const ADMIN_LINE_USER_IDS = [
   // 'Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
@@ -638,7 +638,7 @@ function handleLineWebhook(payload) {
     saveLineSource(event.source || {});
 
     var text = normalize(event.message && event.message.text);
-    if (event.replyToken && text && (text.indexOf('報名') >= 0 || text.toLowerCase() === 'liff')) {
+    if (event.replyToken && text && (text.indexOf('連義華') >= 0 || text.toLowerCase() === 'liff')) {
       replyLineMessage(event.replyToken, [buildLiffEntryFlexMessage()]);
     }
   }
