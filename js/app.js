@@ -19,8 +19,10 @@ const state = {
   isDateLocked: false
 };
 
-document.addEventListener("DOMContentLoaded", async () => {
-  await initLiffSafe();
+let liffReadyPromise = null;
+
+document.addEventListener("DOMContentLoaded", () => {
+  liffReadyPromise = initLiffSafe();
   if (isIndexPage()) return initIndexPage();
   if (isDatePage()) return initDatePage();
 });
@@ -109,6 +111,7 @@ async function initDatePage() {
     bindExtraTypeBehavior();
     applyDateLockToInputs();
 
+    hideGlobalLoading();
     await loadPageData(date);
   } catch (error) {
     pageError.hidden = false;
@@ -142,6 +145,7 @@ function renderFixedMembers(date) {
       button.disabled = true;
       button.textContent = "送出中...";
       try {
+        await ensureLiffIdentityReady();
         await callApi(withLineIdentity({ action: "leave", date, memberId: member.id, memberName: member.name, gender: member.gender }));
         markMemberLeave(member.id);
         button.textContent = "已送出";
@@ -228,6 +232,7 @@ function bindExtraForm(date) {
 
     submitBtn.disabled = true;
     try {
+      await ensureLiffIdentityReady();
       await callApi(withLineIdentity({ action: "extra_signup", date, extraType, maleName, femaleName, note, pairMustTogether }));
       form.reset();
       document.getElementById("extraType").value = "MALE";
@@ -285,6 +290,7 @@ function bindSettlementButton(date) {
 
     btn.disabled = true;
     try {
+      await ensureLiffIdentityReady();
       await callApi(withLineIdentity({ action: "trigger_settlement", date, token }));
       await loadPageData(date);
     } catch (error) {
@@ -832,8 +838,19 @@ async function initLiffSafe() {
 function withLineIdentity(params) {
   return {
     ...params,
+    lineUserId: state.lineUserId,
+    lineDisplayName: state.lineDisplayName,
     lineIdToken: state.lineIdToken
   };
+}
+
+async function ensureLiffIdentityReady() {
+  if (!liffReadyPromise) return;
+  try {
+    await liffReadyPromise;
+  } catch (error) {
+    console.warn("LIFF identity not ready:", error);
+  }
 }
 
 function withTimeout(promise, ms) {

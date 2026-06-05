@@ -221,12 +221,21 @@ function verifyLineIdentityFromPayload(payload, throwOnInvalid) {
   }
 }
 
+function getLineIdentityForRecord(payload) {
+  var verified = verifyLineIdentityFromPayload(payload, false);
+  if (verified && verified.userId) return verified;
+  return {
+    userId: normalize(payload.lineUserId),
+    displayName: normalize(payload.lineDisplayName)
+  };
+}
+
 function saveLeave(payload) {
   const date = normalize(payload.date);
   const memberId = normalize(payload.memberId);
   const memberName = normalize(payload.memberName);
   const gender = normalize(payload.gender);
-  const lineIdentity = verifyLineIdentityFromPayload(payload, false) || { userId: '', displayName: '' };
+  const lineIdentity = getLineIdentityForRecord(payload);
 
   if (!date || !memberId || !memberName) throw new Error('invalid leave payload');
   validateDateIsAvailable(date);
@@ -249,7 +258,7 @@ function saveExtraSignup(payload) {
   const femaleName = normalize(payload.femaleName);
   const note = normalize(payload.note);
   const pairMustTogether = normalize(payload.pairMustTogether).toLowerCase();
-  const lineIdentity = verifyLineIdentityFromPayload(payload, false) || { userId: '', displayName: '' };
+  const lineIdentity = getLineIdentityForRecord(payload);
 
   validateDateIsAvailable(date);
 
