@@ -5,6 +5,7 @@ const LEAVE_SHEET = 'leave_records';
 const EXTRA_SHEET = 'extra_signups';
 const FINAL_SHEET = 'final_list';
 const SETTLE_SHEET = 'settlement_control';
+const SETTLEMENT_LOGS_SHEET = 'settlement_logs';
 const LINE_GROUPS_SHEET = 'line_groups';
 const LINE_WEBHOOK_LOGS_SHEET = 'line_webhook_logs';
 
@@ -102,7 +103,7 @@ function doGet(e) {
       requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken));
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
-      triggerSettlement(date, 'manual_api_trigger');
+      triggerSettlement(date, 'manual_api_trigger', getLineIdentityForRecord(e.parameter));
       rebuildFinalListForDate(date);
       return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
     }
@@ -160,7 +161,7 @@ function doPost(e) {
       requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken));
       const date = normalize(payload.date);
       validateDateIsAvailable(date);
-      triggerSettlement(date, 'manual_post_trigger');
+      triggerSettlement(date, 'manual_post_trigger', getLineIdentityForRecord(payload));
       rebuildFinalListForDate(date);
       return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
     }
@@ -210,6 +211,8 @@ function requireSettlementPermission(token, lineIdToken) {
   if (!ENABLE_MANUAL_SETTLEMENT_TRIGGER) throw new Error('manual settlement trigger is disabled');
   var identity = verifyLineIdentityFromPayload({ lineIdToken: lineIdToken }, false);
   if (identity && isAdminLineUser(identity.userId)) return;
+  if (!token && identity && identity.userId) throw new Error('LINE user is not admin: ' + identity.userId);
+  if (!token && lineIdToken && !identity) throw new Error('LINE identity token verification failed');
   if (!token || token !== SETTLEMENT_TRIGGER_TOKEN) throw new Error('permission denied');
 }
 
@@ -253,7 +256,12 @@ function verifyLineIdentityFromPayload(payload, throwOnInvalid) {
 
 function getLineIdentityForRecord(payload) {
   var verified = verifyLineIdentityFromPayload(payload, false);
-  if (verified && verified.userId) return verified;
+  if (verified && verified.userId) {
+    return {
+      userId: verified.userId,
+      displayName: verified.displayName || normalize(payload.lineDisplayName)
+    };
+  }
   return {
     userId: normalize(payload.lineUserId),
     displayName: normalize(payload.lineDisplayName)
@@ -602,6 +610,7 @@ function getAuditLogsByDate(date) {
   var logs = [];
   var leaveRows = getSheet(LEAVE_SHEET).getDataRange().getDisplayValues();
   var extraRows = getSheet(EXTRA_SHEET).getDataRange().getDisplayValues();
+  var settlementRows = getSheet(SETTLEMENT_LOGS_SHEET).getDataRange().getDisplayValues();
 
   for (var i = 1; i < leaveRows.length; i += 1) {
     if (normalize(leaveRows[i][0]) !== date) continue;
@@ -629,6 +638,16 @@ function getAuditLogsByDate(date) {
         detail: buildExtraDetail(normalize(extraRows[j][2]), normalize(extraRows[j][3]), normalize(extraRows[j][4]))
       });
     }
+  }
+
+  for (var k = 1; k < settlementRows.length; k += 1) {
+    if (normalize(settlementRows[k][0]) !== date) continue;
+    logs.push({
+      time: normalize(settlementRows[k][3]),
+      kind: '結算操作',
+      action: normalize(settlementRows[k][1]) || '觸發',
+      detail: buildSettlementAuditDetail(normalize(settlementRows[k][2]), normalize(settlementRows[k][4]), normalize(settlementRows[k][5]))
+    });
   }
 
   logs.sort(function (a, b) {
@@ -863,6 +882,11 @@ function buildExtraDetail(type, maleName, femaleName) {
   return '一男一女 / ' + maleName + ' + ' + femaleName;
 }
 
+function buildSettlementAuditDetail(note, lineUserId, lineDisplayName) {
+  var actor = lineDisplayName || lineUserId || '系統';
+  return (note || 'trigger_settlement') + ' / 操作者：' + actor;
+}
+
 function getLeaveSet(date) {
   const rows = getSheet(LEAVE_SHEET).getDataRange().getDisplayValues();
   const out = {};
@@ -954,11 +978,21 @@ function ensureSettlementRow(date) {
   if (!getSettlementRow(date, false)) getSheet(SETTLE_SHEET).appendRow([date, '', '0', '', '']);
 }
 
-function triggerSettlement(date, note) {
+function triggerSettlement(date, note, lineIdentity) {
+  var identity = lineIdentity || { userId: '', displayName: '' };
+  var now = nowIso();
   var info = getSettlementRow(date, true);
   info.sheet.getRange(info.index, 3).setValue('1');
-  info.sheet.getRange(info.index, 4).setValue(nowIso());
+  info.sheet.getRange(info.index, 4).setValue(now);
   info.sheet.getRange(info.index, 5).setValue(note || 'manual_trigger');
+  getSheet(SETTLEMENT_LOGS_SHEET).appendRow([
+    date,
+    '觸發結算',
+    note || 'manual_trigger',
+    now,
+    normalize(identity.userId),
+    normalize(identity.displayName)
+  ]);
 }
 
 function autoTriggerSettlementIfDue(date) {
@@ -968,7 +1002,7 @@ function autoTriggerSettlementIfDue(date) {
   var settleAt = normalize(row[1]);
   if (!settleAt) return false;
   if (nowIsoMinute() >= settleAt) {
-    triggerSettlement(date, 'auto_schedule_trigger');
+    triggerSettlement(date, 'auto_schedule_trigger', { userId: '', displayName: '系統排程' });
     return true;
   }
   return false;
@@ -1036,6 +1070,7 @@ function bootstrapSheets() {
   ensureSheet(EXTRA_SHEET, ['signupId', 'date', 'type', 'maleName', 'femaleName', 'note', 'pairMustTogether', 'isCanceled', 'createdAt', 'canceledAt', 'lineUserId', 'lineDisplayName']);
   ensureSheet(FINAL_SHEET, ['date', 'name', 'gender', 'source', 'signupId']);
   ensureSheet(SETTLE_SHEET, ['date', 'settleAt(YYYY-MM-DD HH:mm)', 'settled(0/1)', 'settledAt', 'triggerNote']);
+  ensureSheet(SETTLEMENT_LOGS_SHEET, ['date', 'action', 'note', 'createdAt', 'lineUserId', 'lineDisplayName']);
   ensureSheet(LINE_GROUPS_SHEET, ['sourceType', 'sourceId', 'lastUserId', 'lastSeenAt', 'note']);
   ensureSheet(LINE_WEBHOOK_LOGS_SHEET, ['createdAt', 'sourceType', 'sourceId', 'userId', 'text', 'action', 'detail']);
 }

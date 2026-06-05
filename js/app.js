@@ -287,12 +287,13 @@ function bindSettlementButton(date) {
 
   btn.addEventListener("click", async () => {
     const token = await uiPrompt("請輸入結算觸發碼。管理員 LINE 帳號可留空直接送出。");
-    if (!token && !state.lineIdToken) return;
+    if (!token) await ensureLiffIdentityReady(true);
+    else await ensureLiffIdentityReady(false);
+    if (!token && !state.lineIdToken) return uiAlert(`無法以管理員身分觸發結算。${buildLiffStatusText()}`);
     if (!(await uiConfirm("確定現在要觸發結算嗎？觸發後會開始用額外報名補位。"))) return;
 
     btn.disabled = true;
     try {
-      await ensureLiffIdentityReady();
       await callApi(withLineIdentity({ action: "trigger_settlement", date, token }));
       await loadPageData(date);
     } catch (error) {
