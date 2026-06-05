@@ -52,6 +52,31 @@ LIFF 會在請假、額外報名、觸發結算時帶入：
 - `settledAt`
 - `triggerNote`
 
+## LINE Bot 推播最終名單
+
+需要 LINE Official Account + Messaging API Channel，個人 LINE 帳號不能當 Bot 使用。
+
+設定步驟：
+- 在 Apps Script 專案設定的 Script Properties 新增 `LINE_CHANNEL_ACCESS_TOKEN`
+- 可選：新增 `LINE_DEFAULT_GROUP_ID`
+- LINE Developers 的 Messaging API Webhook URL 設成 Apps Script Web App URL
+- 把 Bot 加到群組後，在群組傳「報名」，GAS 會把群組來源記到 `line_groups`
+- `line_groups.sourceId` 就是 groupId，可填到 `LINE_DEFAULT_GROUP_ID`
+
+推送某日期最終名單：
+
+```text
+GAS_WEB_APP_URL?action=push_final_list&date=2026-06-08&token=fixitego
+```
+
+也可指定群組：
+
+```text
+GAS_WEB_APP_URL?action=push_final_list&date=2026-06-08&groupId=GROUP_ID&token=fixitego
+```
+
+群組內輸入「報名」時，Bot 會回覆一則 Flex Message，按鈕會開啟 LIFF 報名頁。
+
 ## 前端體驗
 
 - 跳頁有全螢幕 loading

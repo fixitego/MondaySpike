@@ -5,6 +5,7 @@ const LEAVE_SHEET = 'leave_records';
 const EXTRA_SHEET = 'extra_signups';
 const FINAL_SHEET = 'final_list';
 const SETTLE_SHEET = 'settlement_control';
+const LINE_GROUPS_SHEET = 'line_groups';
 
 const TOTAL_LIMIT = 18;
 const FEMALE_LIMIT = 9;
@@ -15,6 +16,9 @@ const ALLOW_EDIT_PAST_DATE = false;
 const ENABLE_MANUAL_SETTLEMENT_TRIGGER = true;
 const SETTLEMENT_TRIGGER_TOKEN = 'fixitego';
 const LINE_LOGIN_CHANNEL_ID = '2010159498';
+const LINE_LIFF_URL = 'https://liff.line.me/2010159498-6XQaB49g';
+const LINE_CHANNEL_ACCESS_TOKEN_PROPERTY = '860334fc49f8828296e5e210f25885a9';
+const LINE_DEFAULT_GROUP_ID_PROPERTY = 'LINE_DEFAULT_GROUP_ID';
 const ADMIN_LINE_USER_IDS = [
   // 'Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 ];
@@ -100,6 +104,15 @@ function doGet(e) {
       return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
     }
 
+    if (action === 'push_final_list') {
+      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken));
+      const date = normalize(e.parameter.date);
+      validateDateIsAvailable(date);
+      rebuildFinalListForDate(date);
+      pushFinalListFlexMessage(date, normalize(e.parameter.groupId));
+      return jsonOutput({ ok: true });
+    }
+
     return jsonOutput({ ok: false, message: 'unknown action' });
   } catch (err) {
     return jsonOutput({ ok: false, message: String(err) });
@@ -110,6 +123,11 @@ function doPost(e) {
   try {
     bootstrapSheets();
     const payload = JSON.parse(e.postData.contents || '{}');
+    if (payload.events && !payload.action) {
+      handleLineWebhook(payload);
+      return jsonOutput({ ok: true });
+    }
+
     const action = normalize(payload.action);
 
     if (action === 'leave') {
@@ -142,6 +160,15 @@ function doPost(e) {
       triggerSettlement(date, 'manual_post_trigger');
       rebuildFinalListForDate(date);
       return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
+    }
+
+    if (action === 'push_final_list') {
+      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken));
+      const date = normalize(payload.date);
+      validateDateIsAvailable(date);
+      rebuildFinalListForDate(date);
+      pushFinalListFlexMessage(date, normalize(payload.groupId));
+      return jsonOutput({ ok: true });
     }
 
     return jsonOutput({ ok: false, message: 'unknown action' });
@@ -604,6 +631,161 @@ function getAuditLogsByDate(date) {
   return logs;
 }
 
+function handleLineWebhook(payload) {
+  var events = payload.events || [];
+  for (var i = 0; i < events.length; i += 1) {
+    var event = events[i];
+    saveLineSource(event.source || {});
+
+    var text = normalize(event.message && event.message.text);
+    if (event.replyToken && text && (text.indexOf('報名') >= 0 || text.toLowerCase() === 'liff')) {
+      replyLineMessage(event.replyToken, [buildLiffEntryFlexMessage()]);
+    }
+  }
+}
+
+function saveLineSource(source) {
+  var sourceType = normalize(source.type);
+  var sourceId = normalize(source.groupId || source.roomId || source.userId);
+  if (!sourceType || !sourceId) return;
+
+  var sheet = getSheet(LINE_GROUPS_SHEET);
+  var rows = sheet.getDataRange().getDisplayValues();
+  for (var i = 1; i < rows.length; i += 1) {
+    if (normalize(rows[i][0]) === sourceType && normalize(rows[i][1]) === sourceId) {
+      sheet.getRange(i + 1, 3).setValue(normalize(source.userId));
+      sheet.getRange(i + 1, 4).setValue(nowIso());
+      return;
+    }
+  }
+  sheet.appendRow([sourceType, sourceId, normalize(source.userId), nowIso(), '']);
+}
+
+function buildLiffEntryFlexMessage() {
+  return {
+    type: 'flex',
+    altText: 'Monday Spike 報名入口',
+    contents: {
+      type: 'bubble',
+      size: 'mega',
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'md',
+        contents: [
+          { type: 'text', text: 'Monday Spike', weight: 'bold', size: 'xl', color: '#26342F' },
+          { type: 'text', text: '點擊下方按鈕進入本週報名頁。', wrap: true, size: 'sm', color: '#6F7D78' },
+          {
+            type: 'button',
+            style: 'primary',
+            color: '#7AA68F',
+            action: { type: 'uri', label: '開啟報名', uri: LINE_LIFF_URL }
+          }
+        ]
+      }
+    }
+  };
+}
+
+function pushFinalListFlexMessage(date, groupId) {
+  var to = groupId || getDefaultLineGroupId();
+  if (!to) throw new Error('LINE groupId required. Set groupId parameter or Script Property LINE_DEFAULT_GROUP_ID.');
+  pushLineMessage(to, [buildFinalListFlexMessage(date)]);
+}
+
+function buildFinalListFlexMessage(date) {
+  var records = getFinalListByDate(date);
+  var male = [];
+  var female = [];
+  for (var i = 0; i < records.length; i += 1) {
+    if (records[i].gender === '女') female.push(records[i]);
+    else if (records[i].gender === '男') male.push(records[i]);
+  }
+
+  var contents = [
+    { type: 'text', text: date + ' 最終名單', weight: 'bold', size: 'xl', color: '#26342F' },
+    { type: 'text', text: '總人數 ' + records.length + ' / ' + TOTAL_LIMIT + '，女生 ' + female.length + ' / ' + FEMALE_LIMIT, size: 'sm', color: '#6F7D78', margin: 'sm' }
+  ];
+  contents = contents.concat(buildFinalListSection('女生', female, '#D986A4'));
+  contents = contents.concat(buildFinalListSection('男生', male, '#6C9DB5'));
+  contents.push({
+    type: 'button',
+    style: 'link',
+    action: { type: 'uri', label: '查看報名頁', uri: LINE_LIFF_URL }
+  });
+
+  return {
+    type: 'flex',
+    altText: date + ' 最終名單',
+    contents: {
+      type: 'bubble',
+      size: 'mega',
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'md',
+        contents: contents
+      }
+    }
+  };
+}
+
+function buildFinalListSection(title, rows, color) {
+  var out = [
+    { type: 'separator', margin: 'md' },
+    { type: 'text', text: title + ' ' + rows.length + ' 人', weight: 'bold', size: 'md', color: color, margin: 'md' }
+  ];
+  if (!rows.length) {
+    out.push({ type: 'text', text: '無', size: 'sm', color: '#9AA7A1' });
+    return out;
+  }
+
+  var names = [];
+  for (var i = 0; i < rows.length; i += 1) {
+    names.push((i + 1) + '. ' + rows[i].name);
+  }
+  out.push({ type: 'text', text: names.join('\n'), wrap: true, size: 'sm', color: '#26342F' });
+  return out;
+}
+
+function replyLineMessage(replyToken, messages) {
+  callLineMessagingApi('https://api.line.me/v2/bot/message/reply', {
+    replyToken: replyToken,
+    messages: messages
+  });
+}
+
+function pushLineMessage(to, messages) {
+  callLineMessagingApi('https://api.line.me/v2/bot/message/push', {
+    to: to,
+    messages: messages
+  });
+}
+
+function callLineMessagingApi(url, payload) {
+  var token = getLineChannelAccessToken();
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + token },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
+    throw new Error('LINE Messaging API failed: ' + response.getResponseCode() + ' ' + response.getContentText());
+  }
+}
+
+function getLineChannelAccessToken() {
+  var token = normalize(PropertiesService.getScriptProperties().getProperty(LINE_CHANNEL_ACCESS_TOKEN_PROPERTY));
+  if (!token) throw new Error('Script Property LINE_CHANNEL_ACCESS_TOKEN is required');
+  return token;
+}
+
+function getDefaultLineGroupId() {
+  return normalize(PropertiesService.getScriptProperties().getProperty(LINE_DEFAULT_GROUP_ID_PROPERTY));
+}
+
 function buildExtraDetail(type, maleName, femaleName) {
   if (type === 'MALE') return '男 / ' + maleName;
   if (type === 'FEMALE') return '女 / ' + femaleName;
@@ -779,6 +961,7 @@ function bootstrapSheets() {
   ensureSheet(EXTRA_SHEET, ['signupId', 'date', 'type', 'maleName', 'femaleName', 'note', 'pairMustTogether', 'isCanceled', 'createdAt', 'canceledAt', 'lineUserId', 'lineDisplayName']);
   ensureSheet(FINAL_SHEET, ['date', 'name', 'gender', 'source', 'signupId']);
   ensureSheet(SETTLE_SHEET, ['date', 'settleAt(YYYY-MM-DD HH:mm)', 'settled(0/1)', 'settledAt', 'triggerNote']);
+  ensureSheet(LINE_GROUPS_SHEET, ['sourceType', 'sourceId', 'lastUserId', 'lastSeenAt', 'note']);
 }
 
 function ensureSheet(name, headers, seedRows) {
