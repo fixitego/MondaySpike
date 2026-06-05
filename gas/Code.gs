@@ -668,12 +668,25 @@ function handleLineWebhook(payload) {
       var text = normalize(event.message && event.message.text);
       appendLineWebhookLog(source, text, 'received', '');
       if (!event.replyToken || !text) continue;
+      if (isGroupLikeSource(source) && !isBotMentioned(event.message)) {
+        appendLineWebhookLog(source, text, 'ignored_no_bot_mention', '');
+        continue;
+      }
+
+      if (isOpenSignupCommand(text)) {
+        var openDate = extractDateFromText(text);
+        if (!openDate) throw new Error('date required for open signup command');
+        upsertAvailableDateFromBot(openDate);
+        replyLineMessage(event.replyToken, [buildOpenSignupReplyMessage(openDate)]);
+        appendLineWebhookLog(source, text, 'reply_open_signup', openDate);
+        continue;
+      }
 
       if (isFinalListCommand(text)) {
         var date = extractDateFromText(text) || getDefaultPushDate();
         validateDateIsAvailable(date);
         rebuildFinalListIfScheduledSettlementDue(date);
-        replyLineMessage(event.replyToken, [buildFinalListFlexMessage(date)]);
+        replyLineMessage(event.replyToken, [buildFinalListWithWaitlistFlexMessage(date)]);
         appendLineWebhookLog(source, text, 'reply_final_list', date);
         continue;
       }
@@ -696,13 +709,36 @@ function isLiffEntryCommand(text) {
   return text.indexOf('報名') >= 0 || text.indexOf('連義華') >= 0 || normalized.indexOf('liff') >= 0;
 }
 
+function isOpenSignupCommand(text) {
+  return text.indexOf('開始報名') >= 0 || text.indexOf('開放報名') >= 0;
+}
+
+function isGroupLikeSource(source) {
+  var type = normalize(source && source.type);
+  return type === 'group' || type === 'room';
+}
+
+function isBotMentioned(message) {
+  var mentionees = message && message.mention && message.mention.mentionees;
+  if (!mentionees || !mentionees.length) return false;
+  for (var i = 0; i < mentionees.length; i += 1) {
+    if (mentionees[i] && mentionees[i].isSelf === true) return true;
+  }
+  return false;
+}
+
 function isFinalListCommand(text) {
   return text.indexOf('名單') >= 0 || text.indexOf('結算') >= 0;
 }
 
 function extractDateFromText(text) {
-  var match = normalize(text).match(/\d{4}-\d{2}-\d{2}/);
-  return match ? match[0] : '';
+  var value = normalize(text);
+  var isoMatch = value.match(/\d{4}-\d{1,2}-\d{1,2}/);
+  if (isoMatch) return normalizeDateParts(isoMatch[0].split('-')[0], isoMatch[0].split('-')[1], isoMatch[0].split('-')[2]);
+
+  var slashMatch = value.match(/(\d{1,2})\s*[\/月]\s*(\d{1,2})/);
+  if (slashMatch) return normalizeDateParts(todayDateStr().split('-')[0], slashMatch[1], slashMatch[2]);
+  return '';
 }
 
 function getDefaultPushDate() {
@@ -809,6 +845,59 @@ function buildFinalListFlexMessage(date) {
         layout: 'vertical',
         spacing: 'md',
         contents: contents
+      }
+    }
+  };
+}
+
+function buildFinalListWithWaitlistFlexMessage(date) {
+  var message = buildFinalListFlexMessage(date);
+  var waitlist = getExtraSignupsWithStatus(date).filter(function (row) {
+    return normalize(row.status) !== '已補上';
+  });
+  var body = message.contents && message.contents.body && message.contents.body.contents;
+  if (body) {
+    body.push({ type: 'separator', margin: 'md' });
+    body.push({ type: 'text', text: '候補中 ' + waitlist.length + ' 組', weight: 'bold', size: 'md', color: '#A77B42', margin: 'md' });
+    body.push({
+      type: 'text',
+      text: buildWaitlistText(waitlist),
+      wrap: true,
+      size: 'sm',
+      color: '#26342F'
+    });
+  }
+  message.altText = date + ' 最終名單與候補';
+  return message;
+}
+
+function buildWaitlistText(rows) {
+  if (!rows.length) return '目前沒有候補';
+  return rows.map(function (row, index) {
+    return (index + 1) + '. ' + buildExtraDetail(row.type, row.maleName, row.femaleName) + ' / ' + (row.status || '候補');
+  }).join('\n');
+}
+
+function buildOpenSignupReplyMessage(date) {
+  return {
+    type: 'flex',
+    altText: date + ' 已開放報名',
+    contents: {
+      type: 'bubble',
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'md',
+        contents: [
+          { type: 'text', text: '已開放報名', weight: 'bold', size: 'xl', color: '#26342F' },
+          { type: 'text', text: date + ' 已加入可選日期，固定名單也已建立。', wrap: true, size: 'sm', color: '#6F7D78' },
+          {
+            type: 'button',
+            style: 'primary',
+            color: '#7AA68F',
+            action: { type: 'uri', label: '開啟報名頁', uri: getLineLiffUrl() }
+          }
+        ]
       }
     }
   };
@@ -1027,6 +1116,33 @@ function ensureSettlementRow(date) {
   if (!getSettlementRow(date, false)) getSheet(SETTLE_SHEET).appendRow([date, '', '0', '', '']);
 }
 
+function upsertAvailableDateFromBot(date) {
+  if (!isIsoDate(date)) throw new Error('invalid date: ' + date);
+  var sheet = getSheet(DATES_SHEET);
+  var rows = sheet.getDataRange().getDisplayValues();
+  var label = buildDateLabel(date);
+
+  for (var i = 1; i < rows.length; i += 1) {
+    if (normalize(rows[i][0]) === date) {
+      sheet.getRange(i + 1, 2).setValue(normalize(rows[i][1]) || label);
+      sheet.getRange(i + 1, 3).setValue('1');
+      ensureSettlementRow(date);
+      rebuildFinalListForDate(date);
+      return;
+    }
+  }
+
+  sheet.appendRow([date, label, '1']);
+  ensureSettlementRow(date);
+  rebuildFinalListForDate(date);
+}
+
+function buildDateLabel(date) {
+  var parts = normalize(date).split('-');
+  if (parts.length !== 3) return date;
+  return Number(parts[1]) + '/' + Number(parts[2]);
+}
+
 function triggerSettlement(date, note, lineIdentity) {
   var identity = lineIdentity || { userId: '', displayName: '' };
   var now = nowIso();
@@ -1171,6 +1287,14 @@ function nowIsoMinute() {
 function todayDateStr() {
   var tz = Session.getScriptTimeZone() || 'Asia/Taipei';
   return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+}
+
+function normalizeDateParts(year, month, day) {
+  var y = Number(year);
+  var m = Number(month);
+  var d = Number(day);
+  if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31) return '';
+  return String(y).padStart(4, '0') + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
 }
 
 function isPastDate(date) {
