@@ -14,18 +14,16 @@ const FEMALE_LIMIT = 9;
 const LINE_SOURCE_CAPTURE_PROPERTY = 'ENABLE_LINE_SOURCE_CAPTURE';
 const LINE_WEBHOOK_LOG_PROPERTY = 'ENABLE_LINE_WEBHOOK_LOG';
 
-// 安全控制（寫死在程式）
-const ALLOW_USER_EDIT = true;
-const ALLOW_EDIT_PAST_DATE = false;
-const ENABLE_MANUAL_SETTLEMENT_TRIGGER = true;
-const SETTLEMENT_TRIGGER_TOKEN = '666666';
-const LINE_LOGIN_CHANNEL_ID = '2010159498';
-const LINE_LIFF_URL = 'https://liff.line.me/2010159498-6XQaB49g';
+// 安全控制（Apps Script Script Properties）
+const ALLOW_USER_EDIT_PROPERTY = 'ALLOW_USER_EDIT';
+const ALLOW_EDIT_PAST_DATE_PROPERTY = 'ALLOW_EDIT_PAST_DATE';
+const ENABLE_MANUAL_SETTLEMENT_TRIGGER_PROPERTY = 'ENABLE_MANUAL_SETTLEMENT_TRIGGER';
+const SETTLEMENT_TRIGGER_TOKEN_PROPERTY = 'SETTLEMENT_TRIGGER_TOKEN';
+const LINE_LOGIN_CHANNEL_ID_PROPERTY = 'LINE_LOGIN_CHANNEL_ID';
+const LINE_LIFF_URL_PROPERTY = 'LINE_LIFF_URL';
 const LINE_CHANNEL_ACCESS_TOKEN_PROPERTY = 'LINE_CHANNEL_ACCESS_TOKEN';
 const LINE_DEFAULT_GROUP_ID_PROPERTY = 'LINE_DEFAULT_GROUP_ID';
-const ADMIN_LINE_USER_IDS = [
-  'U02cb2cfecfa1364ef928c25fd500b3b0'
-];
+const ADMIN_LINE_USER_IDS_PROPERTY = 'ADMIN_LINE_USER_IDS';
 
 function doGet(e) {
   try {
@@ -100,7 +98,7 @@ function doGet(e) {
 
     if (action === 'trigger_settlement') {
       assertEditableDate(normalize(e.parameter.date));
-      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken));
+      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
       triggerSettlement(date, 'manual_api_trigger', getLineIdentityForRecord(e.parameter));
@@ -109,7 +107,7 @@ function doGet(e) {
     }
 
     if (action === 'push_final_list') {
-      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken));
+      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
       rebuildFinalListIfScheduledSettlementDue(date);
@@ -158,7 +156,7 @@ function doPost(e) {
 
     if (action === 'trigger_settlement') {
       assertEditableDate(normalize(payload.date));
-      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken));
+      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
       const date = normalize(payload.date);
       validateDateIsAvailable(date);
       triggerSettlement(date, 'manual_post_trigger', getLineIdentityForRecord(payload));
@@ -167,7 +165,7 @@ function doPost(e) {
     }
 
     if (action === 'push_final_list') {
-      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken));
+      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
       const date = normalize(payload.date);
       validateDateIsAvailable(date);
       rebuildFinalListIfScheduledSettlementDue(date);
@@ -182,7 +180,7 @@ function doPost(e) {
 }
 
 function assertEditable() {
-  if (!ALLOW_USER_EDIT) throw new Error('editing is disabled by server policy');
+  if (!isUserEditAllowed()) throw new Error('editing is disabled by server policy');
 }
 
 function getConfigResponse() {
@@ -191,9 +189,9 @@ function getConfigResponse() {
     availableDates: getAvailableDates(),
     fixedMembers: getFixedMembers(),
     policy: {
-      allowUserEdit: ALLOW_USER_EDIT,
-      allowEditPastDate: ALLOW_EDIT_PAST_DATE,
-      enableManualSettlementTrigger: ENABLE_MANUAL_SETTLEMENT_TRIGGER,
+      allowUserEdit: isUserEditAllowed(),
+      allowEditPastDate: isEditPastDateAllowed(),
+      enableManualSettlementTrigger: isManualSettlementEnabled(),
       today: todayDateStr()
     }
   };
@@ -202,25 +200,27 @@ function getConfigResponse() {
 function assertEditableDate(date) {
   assertEditable();
   if (!date) throw new Error('date required');
-  if (!ALLOW_EDIT_PAST_DATE && isPastDate(date)) {
+  if (!isEditPastDateAllowed() && isPastDate(date)) {
     throw new Error('date is closed for editing');
   }
 }
 
-function requireSettlementPermission(token, lineIdToken) {
-  if (!ENABLE_MANUAL_SETTLEMENT_TRIGGER) throw new Error('manual settlement trigger is disabled');
+function requireSettlementPermission(token, lineIdToken, fallbackLineUserId) {
+  if (!isManualSettlementEnabled()) throw new Error('manual settlement trigger is disabled');
   var identity = verifyLineIdentityFromPayload({ lineIdToken: lineIdToken }, false);
   if (identity && isAdminLineUser(identity.userId)) return;
+  if (!token && isAdminLineUser(fallbackLineUserId)) return;
   if (!token && identity && identity.userId) throw new Error('LINE user is not admin: ' + identity.userId);
   if (!token && lineIdToken && !identity) throw new Error('LINE identity token verification failed');
-  if (!token || token !== SETTLEMENT_TRIGGER_TOKEN) throw new Error('permission denied');
+  if (!token || token !== getSettlementTriggerToken()) throw new Error('permission denied');
 }
 
 function isAdminLineUser(lineUserId) {
   var id = normalize(lineUserId);
   if (!id) return false;
-  for (var i = 0; i < ADMIN_LINE_USER_IDS.length; i += 1) {
-    if (normalize(ADMIN_LINE_USER_IDS[i]) === id) return true;
+  var adminIds = getAdminLineUserIds();
+  for (var i = 0; i < adminIds.length; i += 1) {
+    if (normalize(adminIds[i]) === id) return true;
   }
   return false;
 }
@@ -234,7 +234,7 @@ function verifyLineIdentityFromPayload(payload, throwOnInvalid) {
       method: 'post',
       payload: {
         id_token: idToken,
-        client_id: LINE_LOGIN_CHANNEL_ID
+        client_id: getLineLoginChannelId()
       },
       muteHttpExceptions: true
     });
@@ -763,7 +763,7 @@ function buildLiffEntryFlexMessage() {
             type: 'button',
             style: 'primary',
             color: '#7AA68F',
-            action: { type: 'uri', label: '開啟報名', uri: LINE_LIFF_URL }
+            action: { type: 'uri', label: '開啟報名', uri: getLineLiffUrl() }
           }
         ]
       }
@@ -795,7 +795,7 @@ function buildFinalListFlexMessage(date) {
   contents.push({
     type: 'button',
     style: 'link',
-    action: { type: 'uri', label: '查看報名頁', uri: LINE_LIFF_URL }
+    action: { type: 'uri', label: '查看報名頁', uri: getLineLiffUrl() }
   });
 
   return {
@@ -872,8 +872,57 @@ function getDefaultLineGroupId() {
 }
 
 function isScriptPropertyEnabled(name) {
-  var value = normalize(PropertiesService.getScriptProperties().getProperty(name)).toLowerCase();
-  return ['1', 'true', 'yes', 'y', 'on'].indexOf(value) >= 0;
+  return getBooleanScriptProperty(name, false);
+}
+
+function getScriptProperty(name) {
+  return normalize(PropertiesService.getScriptProperties().getProperty(name));
+}
+
+function getRequiredScriptProperty(name) {
+  var value = getScriptProperty(name);
+  if (!value) throw new Error('Script Property ' + name + ' is required');
+  return value;
+}
+
+function getBooleanScriptProperty(name, defaultValue) {
+  var value = getScriptProperty(name).toLowerCase();
+  if (!value) return !!defaultValue;
+  if (['1', 'true', 'yes', 'y', 'on'].indexOf(value) >= 0) return true;
+  if (['0', 'false', 'no', 'n', 'off'].indexOf(value) >= 0) return false;
+  return !!defaultValue;
+}
+
+function isUserEditAllowed() {
+  return getBooleanScriptProperty(ALLOW_USER_EDIT_PROPERTY, true);
+}
+
+function isEditPastDateAllowed() {
+  return getBooleanScriptProperty(ALLOW_EDIT_PAST_DATE_PROPERTY, false);
+}
+
+function isManualSettlementEnabled() {
+  return getBooleanScriptProperty(ENABLE_MANUAL_SETTLEMENT_TRIGGER_PROPERTY, true);
+}
+
+function getSettlementTriggerToken() {
+  return getScriptProperty(SETTLEMENT_TRIGGER_TOKEN_PROPERTY);
+}
+
+function getLineLoginChannelId() {
+  return getRequiredScriptProperty(LINE_LOGIN_CHANNEL_ID_PROPERTY);
+}
+
+function getLineLiffUrl() {
+  return getRequiredScriptProperty(LINE_LIFF_URL_PROPERTY);
+}
+
+function getAdminLineUserIds() {
+  var value = getScriptProperty(ADMIN_LINE_USER_IDS_PROPERTY);
+  if (!value) return [];
+  return value.split(/[\s,，]+/).map(function (id) {
+    return normalize(id);
+  }).filter(Boolean);
 }
 
 function buildExtraDetail(type, maleName, femaleName) {

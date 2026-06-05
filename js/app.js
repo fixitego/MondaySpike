@@ -6,6 +6,8 @@
   settlementTriggerToken: "CHANGE_ME_STRONG_TOKEN"
 };
 
+const LINE_IDENTITY_CACHE_KEY = "mondaySpike:lineIdentity";
+
 const state = {
   availableDates: [],
   dateSet: new Set(),
@@ -23,6 +25,7 @@ const state = {
 let liffReadyPromise = null;
 
 document.addEventListener("DOMContentLoaded", () => {
+  loadCachedLineIdentity();
   liffReadyPromise = initLiffSafe();
   if (isIndexPage()) return initIndexPage();
   if (isDatePage()) return initDatePage();
@@ -42,6 +45,7 @@ async function initIndexPage() {
 
   try {
     showGlobalLoading();
+    await ensureLiffIdentityReady(false);
     await loadControlConfig(false);
     renderIndexDateControls();
   } catch (error) {
@@ -850,6 +854,7 @@ async function initLiffSafe() {
     if (decoded) {
       state.lineUserId = String(decoded.sub || "").trim();
       state.lineDisplayName = String(decoded.name || "").trim();
+      state.liffStatus.profileReady = !!state.lineUserId;
     }
 
     try {
@@ -860,6 +865,8 @@ async function initLiffSafe() {
     } catch (profileError) {
       state.liffStatus.error = `getProfile 失敗：${profileError.message || profileError}`;
     }
+    applyCachedLineIdentity();
+    saveLineIdentityCache();
   } catch (error) {
     state.liffStatus.error = error.message || String(error);
     console.warn("LIFF init failed:", error);
@@ -900,6 +907,40 @@ async function ensureLiffIdentityReady(required) {
 function buildLiffStatusText() {
   const s = state.liffStatus || {};
   return `目前狀態：sdk=${!!s.sdk}, init=${!!s.initialized}, inClient=${!!s.inClient}, loggedIn=${!!s.loggedIn}, profile=${!!s.profileReady}, idToken=${!!s.idTokenReady}${s.error ? `, error=${s.error}` : ""}`;
+}
+
+function loadCachedLineIdentity() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(LINE_IDENTITY_CACHE_KEY) || "{}");
+    state.lineUserId = String(cached.userId || "").trim();
+    state.lineDisplayName = String(cached.displayName || "").trim();
+  } catch (error) {
+    console.warn("LINE identity cache read failed:", error);
+  }
+}
+
+function applyCachedLineIdentity() {
+  if (!state.lineUserId || state.lineDisplayName) return;
+  try {
+    const cached = JSON.parse(localStorage.getItem(LINE_IDENTITY_CACHE_KEY) || "{}");
+    if (String(cached.userId || "").trim() === state.lineUserId) {
+      state.lineDisplayName = String(cached.displayName || "").trim();
+    }
+  } catch (error) {
+    console.warn("LINE identity cache apply failed:", error);
+  }
+}
+
+function saveLineIdentityCache() {
+  if (!state.lineUserId) return;
+  try {
+    localStorage.setItem(LINE_IDENTITY_CACHE_KEY, JSON.stringify({
+      userId: state.lineUserId,
+      displayName: state.lineDisplayName || ""
+    }));
+  } catch (error) {
+    console.warn("LINE identity cache write failed:", error);
+  }
 }
 
 function renderLiffDebug() {
