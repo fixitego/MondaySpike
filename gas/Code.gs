@@ -14,13 +14,13 @@ const FEMALE_LIMIT = 9;
 const ALLOW_USER_EDIT = true;
 const ALLOW_EDIT_PAST_DATE = false;
 const ENABLE_MANUAL_SETTLEMENT_TRIGGER = true;
-const SETTLEMENT_TRIGGER_TOKEN = 'fixitego';
+const SETTLEMENT_TRIGGER_TOKEN = '666666';
 const LINE_LOGIN_CHANNEL_ID = '2010159498';
 const LINE_LIFF_URL = 'https://liff.line.me/2010159498-6XQaB49g';
 const LINE_CHANNEL_ACCESS_TOKEN_PROPERTY = 'HsjejehgGwnHf9uTRcld1+W38GmmjJdfgxSRa2vz6jaDZmaeW2yHG8NNvzCRUYz0Wx+1vJpMVUtC1zIy8pQ2rQLp5dw5eDu7iQ2I1kDvf4OGHhNfUS1Yp72EbNpt9ph92FO3Hw0xSNqciosWSXaiYgdB04t89/1O/w1cDnyilFU=';
-const LINE_DEFAULT_GROUP_ID_PROPERTY = 'LINE_DEFAULT_GROUP_ID';
+const LINE_DEFAULT_GROUP_ID_PROPERTY = 'C72a7dd71b5770fa3ef9dbc45f273abe4';
 const ADMIN_LINE_USER_IDS = [
-  // 'Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+  'U02cb2cfecfa1364ef928c25fd500b3b0'
 ];
 
 function doGet(e) {
@@ -638,10 +638,43 @@ function handleLineWebhook(payload) {
     saveLineSource(event.source || {});
 
     var text = normalize(event.message && event.message.text);
-    if (event.replyToken && text && (text.indexOf('連義華') >= 0 || text.toLowerCase() === 'liff')) {
+    if (!event.replyToken || !text) continue;
+
+    if (isFinalListCommand(text)) {
+      var date = extractDateFromText(text) || getDefaultPushDate();
+      validateDateIsAvailable(date);
+      rebuildFinalListForDate(date);
+      replyLineMessage(event.replyToken, [buildFinalListFlexMessage(date)]);
+      continue;
+    }
+
+    if (isLiffEntryCommand(text)) {
       replyLineMessage(event.replyToken, [buildLiffEntryFlexMessage()]);
     }
   }
+}
+
+function isLiffEntryCommand(text) {
+  var normalized = normalize(text).toLowerCase();
+  return text.indexOf('報名') >= 0 || text.indexOf('連義華') >= 0 || normalized === 'liff';
+}
+
+function isFinalListCommand(text) {
+  return text.indexOf('名單') >= 0 || text.indexOf('結算') >= 0;
+}
+
+function extractDateFromText(text) {
+  var match = normalize(text).match(/\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : '';
+}
+
+function getDefaultPushDate() {
+  var dates = getAvailableDates();
+  var today = todayDateStr();
+  for (var i = 0; i < dates.length; i += 1) {
+    if (dates[i].date >= today) return dates[i].date;
+  }
+  return dates.length ? dates[dates.length - 1].date : '';
 }
 
 function saveLineSource(source) {
