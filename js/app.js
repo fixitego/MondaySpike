@@ -478,9 +478,7 @@ function renderExtraList(date, records) {
     const rule = r.type === "PAIR" ? (r.pairMustTogether === "1" ? "（同進同退）" : "（可拆）") : "";
     const paid = r.isPaid === true || r.isPaid === "1";
     const paymentLabel = paid ? "已收費" : "未收費";
-    const paymentButton = canEditCurrentDate()
-      ? `<button class="btn mini" data-payment-signup="${escapeHtml(r.signupId)}" data-paid="${paid ? "1" : "0"}">${paid ? "取消已收費" : "標記已收費"}</button>`
-      : "";
+    const paymentButton = `<button class="btn mini" data-payment-signup="${escapeHtml(r.signupId)}" data-paid="${paid ? "1" : "0"}">${paid ? "取消已收費" : "標記已收費"}</button>`;
     const cancelBtn = canEditCurrentDate()
       ? `<button class="btn mini danger" data-cancel-signup="${escapeHtml(r.signupId)}">取消</button>`
       : "";
@@ -495,37 +493,37 @@ function renderExtraList(date, records) {
     </tr>`;
   }).join("");
 
-  if (canEditCurrentDate()) {
-    body.querySelectorAll("[data-payment-signup]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const signupId = btn.getAttribute("data-payment-signup");
-        const currentlyPaid = btn.getAttribute("data-paid") === "1";
-        if (!signupId) return;
+  body.querySelectorAll("[data-payment-signup]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const signupId = btn.getAttribute("data-payment-signup");
+      const currentlyPaid = btn.getAttribute("data-paid") === "1";
+      if (!signupId) return;
 
-        const token = await uiPrompt("請輸入管理員觸發碼。管理員 LINE 帳號可留空直接操作。");
-        if (token === null) return;
-        if (!token) await ensureLiffIdentityReady(true);
-        else await ensureLiffIdentityReady(false);
-        if (!token && !state.lineIdToken) return uiAlert(`無法確認管理員身分。${buildLiffStatusText()}`);
-        if (!(await uiConfirm(currentlyPaid ? "確定取消這筆已收費標記？" : "確定將這筆臨打標記為已收費？"))) return;
+      const token = await uiPrompt("請輸入管理員觸發碼。管理員 LINE 帳號可留空直接操作。");
+      if (token === null) return;
+      if (!token) await ensureLiffIdentityReady(true);
+      else await ensureLiffIdentityReady(false);
+      if (!token && !state.lineIdToken) return uiAlert(`無法確認管理員身分。${buildLiffStatusText()}`);
+      if (!(await uiConfirm(currentlyPaid ? "確定取消這筆已收費標記？" : "確定將這筆臨打標記為已收費？"))) return;
 
-        btn.disabled = true;
-        try {
-          await callApi(withLineIdentity({
-            action: "update_extra_payment",
-            date,
-            signupId,
-            isPaid: currentlyPaid ? "0" : "1",
-            token
-          }));
-          await loadPageData(date);
-        } catch (error) {
-          uiAlert(`收費狀態更新失敗：${error.message}`);
-          btn.disabled = false;
-        }
-      });
+      btn.disabled = true;
+      try {
+        await callApi(withLineIdentity({
+          action: "update_extra_payment",
+          date,
+          signupId,
+          isPaid: currentlyPaid ? "0" : "1",
+          token
+        }));
+        await loadPageData(date);
+      } catch (error) {
+        uiAlert(`收費狀態更新失敗：${error.message}`);
+        btn.disabled = false;
+      }
     });
+  });
 
+  if (canEditCurrentDate()) {
     body.querySelectorAll("[data-cancel-signup]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const signupId = btn.getAttribute("data-cancel-signup");

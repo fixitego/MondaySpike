@@ -25,6 +25,9 @@ const LINE_LIFF_URL_PROPERTY = 'LINE_LIFF_URL';
 const LINE_CHANNEL_ACCESS_TOKEN_PROPERTY = 'LINE_CHANNEL_ACCESS_TOKEN';
 const LINE_DEFAULT_GROUP_ID_PROPERTY = 'LINE_DEFAULT_GROUP_ID';
 const ADMIN_LINE_USER_IDS_PROPERTY = 'ADMIN_LINE_USER_IDS';
+const BACKUP_FOLDER_ID_PROPERTY = 'BACKUP_FOLDER_ID';
+const BACKUP_RETENTION_DAYS_PROPERTY = 'BACKUP_RETENTION_DAYS';
+const BACKUP_FILE_PREFIX = 'MondaySpike_Backup_';
 
 function doGet(e) {
   try {
@@ -80,7 +83,6 @@ function doGet(e) {
     }
 
     if (action === 'update_extra_payment') {
-      assertEditableDate(normalize(e.parameter.date));
       requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
       updateExtraPayment(
         normalize(e.parameter.signupId),
@@ -177,7 +179,6 @@ function doPost(e) {
     }
 
     if (action === 'update_extra_payment') {
-      assertEditableDate(normalize(payload.date));
       requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
       updateExtraPayment(
         normalize(payload.signupId),
@@ -1531,6 +1532,63 @@ function getSheet(name) {
   var sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
   return sheet;
+}
+
+function backupSpreadsheet() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('backup is already running');
+
+  try {
+    var folderId = getRequiredScriptProperty(BACKUP_FOLDER_ID_PROPERTY);
+    var retentionDays = getBackupRetentionDays();
+    var folder = DriveApp.getFolderById(folderId);
+    var sourceFile = DriveApp.getFileById(SHEET_ID);
+
+    cleanupExpiredSpreadsheetBackups(folder, retentionDays);
+
+    var tz = Session.getScriptTimeZone() || 'Asia/Taipei';
+    var timestamp = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd_HHmmss');
+    var backupFile = sourceFile.makeCopy(BACKUP_FILE_PREFIX + timestamp, folder);
+    var result = {
+      ok: true,
+      fileId: backupFile.getId(),
+      fileName: backupFile.getName(),
+      fileUrl: backupFile.getUrl(),
+      createdAt: nowIso(),
+      retentionDays: retentionDays
+    };
+    console.log(JSON.stringify(result));
+    return result;
+  } catch (err) {
+    var message = String(err);
+    if (/storage|quota|space|容量|配額/i.test(message)) {
+      throw new Error('Google Drive 空間或配額不足，備份失敗。請清空雲端硬碟垃圾桶、刪除不需要的檔案或增加儲存空間。原始錯誤：' + message);
+    }
+    throw new Error('試算表備份失敗，請檢查 BACKUP_FOLDER_ID 與資料夾權限。原始錯誤：' + message);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function cleanupExpiredSpreadsheetBackups(folder, retentionDays) {
+  var cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - retentionDays);
+
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var file = files.next();
+    if (file.getName().indexOf(BACKUP_FILE_PREFIX) !== 0) continue;
+    if (file.getDateCreated().getTime() >= cutoff.getTime()) continue;
+    file.setTrashed(true);
+  }
+}
+
+function getBackupRetentionDays() {
+  var value = Number(getScriptProperty(BACKUP_RETENTION_DAYS_PROPERTY) || '30');
+  if (!isFinite(value) || value < 1) {
+    throw new Error('Script Property BACKUP_RETENTION_DAYS must be a positive number');
+  }
+  return Math.floor(value);
 }
 
 function createSignupId() {
