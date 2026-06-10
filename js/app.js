@@ -856,10 +856,16 @@ async function initLiffSafe() {
     }
 
     try {
-      const profile = await withTimeout(window.liff.getProfile(), 5000);
+      const profile = await withTimeout(window.liff.getProfile(), 10000);
       state.lineUserId = String(profile.userId || state.lineUserId || "").trim();
-      state.lineDisplayName = String(profile.displayName || state.lineDisplayName || "").trim();
+      state.lineDisplayName = String(profile.displayName || state.lineDisplayName || "WTF").trim();
       state.liffStatus.profileReady = !!state.lineUserId;
+      console.log("displayName:", profile?.displayName);
+      console.log("userId:", profile?.userId);
+      console.log("pictureUrl:", profile?.pictureUrl);
+      console.log("profile.statusMessage:", profile?.statusMessage);
+      console.log(await liff.getProfile());
+      console.log(await window.liff.console());
     } catch (profileError) {
       state.liffStatus.error = `getProfile 失敗：${profileError.message || profileError}`;
     }
