@@ -1,9 +1,10 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Monday Spike | 日期入口</title>
+  <meta name="theme-color" content="#0B0F19" />
+  <title>Monday Spike | 排球週一不孤單</title>
   <script>
     window.MONDAY_SPIKE_ASSET_VERSION = Date.now().toString();
     document.write('<link rel="stylesheet" href="./css/style.css?v=' + window.MONDAY_SPIKE_ASSET_VERSION + '" />');
@@ -11,44 +12,116 @@
   <noscript><link rel="stylesheet" href="./css/style.css" /></noscript>
 </head>
 <body class="page-home">
-  <div class="court-overlay" aria-hidden="true"></div>
+  <div class="ambient-bg" aria-hidden="true">
+    <span class="glow glow-one"></span>
+    <span class="glow glow-two"></span>
+    <span class="noise"></span>
+  </div>
+
   <div id="globalLoading" class="global-loading" hidden>
     <div class="loading-panel">
-      <p>載入中...</p>
+      <div class="loading-orb" aria-hidden="true"></div>
+      <p data-loading-text>正在同步 Monday Spike...</p>
       <div class="loading-bar" aria-hidden="true"><span></span></div>
     </div>
   </div>
 
-  <header class="hero hero-banner full-bleed">
-    <div class="hero-inner container">
-      <h1 class="hero-fixed-title">MONDAY SPIKE 排球團練報名</h1>
-      <div class="hero-track" aria-hidden="true">
-        <img src="./assets/images/home-banner.svg" alt="" />
-        <img src="./assets/images/home-banner-2.svg" alt="" />
-        <img src="./assets/images/home-banner-3.svg" alt="" />
-      </div>
+  <nav class="app-nav container" aria-label="主要導覽">
+    <a class="brand" href="./index.html" aria-label="Monday Spike 首頁">
+      <span class="brand-mark">M</span>
+      <span class="brand-copy"><strong>Monday Spike</strong><small>Club OS</small></span>
+    </a>
+    <div class="nav-actions">
+      <span class="live-pill"><i></i> LIVE</span>
+      <a class="nav-link" href="#dates">場次</a>
     </div>
-  </header>
+  </nav>
 
-  <main class="container">
-    <section class="panel panel-media panel-dates">
-      <h2>快速選擇日期</h2>
-      <p class="note">以下按鈕來自 Google Sheet 的 `available_dates`。</p>
-      <div id="dateList" class="date-grid" aria-live="polite"></div>
+  <main class="container home-shell">
+    <section class="home-hero">
+      <div class="hero-copy">
+        <p class="eyebrow"><span>VOLLEYBALL, ORGANIZED</span></p>
+        <h1>讓每個週一，<br /><em>都有人一起起飛。</em></h1>
+        <p class="hero-lead">報名、請假、候補與結算，在一個為球友設計的流暢空間完成。</p>
+        <div class="hero-actions">
+          <a class="btn primary hero-cta" href="#dates">選擇場次 <span>↗</span></a>
+          <span class="hero-hint">LIFF × Google Sheets 即時同步</span>
+        </div>
+      </div>
+
+      <div class="hero-visual" aria-label="即時系統狀態">
+        <div class="orbital-ring ring-one"></div>
+        <div class="orbital-ring ring-two"></div>
+        <article class="floating-card main-float">
+          <div class="float-head">
+            <span class="mini-label">NEXT SESSION</span>
+            <span class="status-dot"></span>
+          </div>
+          <strong id="homeNextDate">同步中</strong>
+          <p>Monday Night Volleyball</p>
+          <div class="avatar-stack" aria-hidden="true">
+            <span>MS</span><span>+8</span><span>+9</span>
+          </div>
+        </article>
+        <article class="floating-card side-float">
+          <span class="metric-icon">↗</span>
+          <div><small>AVAILABLE</small><strong id="homeDateCount">--</strong></div>
+        </article>
+      </div>
     </section>
 
-    <section class="panel panel-media panel-custom">
-      <h2>自訂日期（限清單內）</h2>
-      <div class="row gap stack-mobile">
+    <section class="home-stats" aria-label="系統摘要">
+      <article class="stat-card">
+        <span class="stat-kicker">身份</span>
+        <strong id="homeUserName">LINE 使用者</strong>
+        <small>安全登入與操作紀錄</small>
+      </article>
+      <article class="stat-card">
+        <span class="stat-kicker">同步</span>
+        <strong>Real-time</strong>
+        <small>Google Sheets 即時資料</small>
+      </article>
+      <article class="stat-card accent">
+        <span class="stat-kicker">容量</span>
+        <strong>18 Players</strong>
+        <small>女生上限 9 人</small>
+      </article>
+    </section>
+
+    <section id="dates" class="dashboard-card date-console">
+      <div class="section-heading">
+        <div>
+          <p class="section-index">01 / SELECT SESSION</p>
+          <h2>選擇你的場次</h2>
+          <p class="note">選一個日期，查看即時名單並完成操作。</p>
+        </div>
+        <span class="section-chip">可用場次</span>
+      </div>
+      <div id="dateList" class="date-grid" aria-live="polite">
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+      </div>
+    </section>
+
+    <section class="dashboard-card quick-entry">
+      <div class="quick-copy">
+        <span class="quick-icon">⌁</span>
+        <div>
+          <h2>快速進入</h2>
+          <p class="note">從所有開放場次中直接選擇。</p>
+        </div>
+      </div>
+      <div class="quick-controls">
         <select id="customDateSelect" aria-label="選擇可用日期"></select>
-        <button id="goDateBtn" class="btn primary" type="button">進入日期頁面</button>
+        <button id="goDateBtn" class="btn primary" type="button">開啟 Dashboard <span>→</span></button>
       </div>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <p>Monday Spike Club</p>
-    <p>Powered by LIFF + Google Sheets</p>
+  <footer class="site-footer container">
+    <div class="brand compact"><span class="brand-mark">M</span><strong>Monday Spike</strong></div>
+    <p>Today we connect. Tomorrow we fly.</p>
   </footer>
 
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>

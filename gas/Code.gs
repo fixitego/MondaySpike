@@ -508,8 +508,8 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
       if (mustTogether) {
         if (used.count > 0) continue;
         if (total + 2 <= TOTAL_LIMIT && females + 1 <= FEMALE_LIMIT) {
-          result.push([date, r.maleName, '男', '臨打報名(配對)', r.signupId]);
-          result.push([date, r.femaleName, '女', '臨打報名(配對)', r.signupId]);
+          result.push([date, r.maleName, '男', '臨打報名(綁定)', r.signupId]);
+          result.push([date, r.femaleName, '女', '臨打報名(綁定)', r.signupId]);
           total += 2;
           females += 1;
           pairMaleAdded = true;
@@ -518,12 +518,12 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
         }
       } else {
         if (!used.male && canMale) {
-          result.push([date, r.maleName, '男', '臨打報名(配對-男)', r.signupId]);
+          result.push([date, r.maleName, '男', '臨打報名(綁定-男)', r.signupId]);
           total += 1;
           pairMaleAdded = true;
         }
         if (!used.female && canFemale && total < TOTAL_LIMIT) {
-          result.push([date, r.femaleName, '女', '臨打報名(配對-女)', r.signupId]);
+          result.push([date, r.femaleName, '女', '臨打報名(綁定-女)', r.signupId]);
           total += 1;
           females += 1;
           pairFemaleAdded = true;

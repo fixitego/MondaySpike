@@ -1,9 +1,10 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Monday Spike | 日期頁</title>
+  <meta name="theme-color" content="#0B0F19" />
+  <title>Monday Spike | 場次 Dashboard</title>
   <script>
     window.MONDAY_SPIKE_ASSET_VERSION = Date.now().toString();
     document.write('<link rel="stylesheet" href="./css/style.css?v=' + window.MONDAY_SPIKE_ASSET_VERSION + '" />');
@@ -11,154 +12,201 @@
   <noscript><link rel="stylesheet" href="./css/style.css" /></noscript>
 </head>
 <body class="page-date">
-  <div class="court-overlay" aria-hidden="true"></div>
+  <div class="ambient-bg" aria-hidden="true">
+    <span class="glow glow-one"></span>
+    <span class="glow glow-two"></span>
+    <span class="noise"></span>
+  </div>
+
   <div id="globalLoading" class="global-loading" hidden>
     <div class="loading-panel">
-      <p data-loading-text>載入中...</p>
+      <div class="loading-orb" aria-hidden="true"></div>
+      <p data-loading-text>同步報名資料...</p>
       <div class="loading-bar" aria-hidden="true"><span></span></div>
     </div>
   </div>
 
-  <main class="container">
-    <header class="hero">
-      <a href="./index.html" class="back-link">← 回日期列表</a>
-      <h1 id="pageTitle">日期報名</h1>
-      <p id="pageSubTitle">請假、臨打報名與最終名單都在此頁操作。</p>
-      <p id="pageError" class="error-text" hidden></p>
+  <nav class="app-nav container" aria-label="日期頁導覽">
+    <a class="brand" href="./index.html">
+      <span class="brand-mark">M</span>
+      <span class="brand-copy"><strong>Monday Spike</strong><small>Session Dashboard</small></span>
+    </a>
+    <div class="nav-actions">
+      <span id="pageModeBadge" class="live-pill"><i></i> SYNCED</span>
+      <a class="nav-link" href="./index.html">所有場次</a>
+    </div>
+  </nav>
+
+  <main class="container dashboard-shell">
+    <header class="date-hero">
+      <div>
+        <a href="./index.html" class="back-link">← 返回場次</a>
+        <p class="eyebrow">SESSION CONTROL</p>
+        <h1 id="pageTitle">日期報名</h1>
+        <p id="pageSubTitle" class="hero-lead">請假、臨打報名與最終名單都在此頁操作。</p>
+        <p id="pageError" class="error-text" hidden></p>
+      </div>
+      <div class="session-signal" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+      </div>
     </header>
 
-    <section class="panel panel-media venue-settings">
-      <div class="row between stack-mobile">
-        <div>
-          <h2>場地與臨打費用</h2>
-          <p id="extraFeeInfo" class="note">臨打費用：每人 190 元（未開冷氣）</p>
-        </div>
-        <div class="venue-actions">
-          <label class="checkbox-line">
-            <input id="hasAirConditioning" type="checkbox" />
-            是否有開冷氣
-          </label>
-          <button id="saveVenueSettingsBtn" class="btn" type="button">儲存設定</button>
-        </div>
-      </div>
+    <section class="metric-grid" aria-label="場次即時統計">
+      <article class="metric-card primary-metric">
+        <span class="metric-label">目前人數</span>
+        <strong><b id="dashboardTotal">--</b><small>/ 18</small></strong>
+        <span class="metric-foot">Live roster</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">女生</span>
+        <strong><b id="dashboardFemale">--</b><small>/ 9</small></strong>
+        <span class="metric-foot">Female players</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">候補</span>
+        <strong><b id="dashboardWaitlist">--</b><small>組</small></strong>
+        <span class="metric-foot">Waiting list</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">已收費</span>
+        <strong><b id="dashboardPaid">--</b><small>筆</small></strong>
+        <span class="metric-foot">Payments</span>
+      </article>
     </section>
 
-    <section class="panel panel-media panel-members">
-      <h2>固定人員名單（請假）</h2>
-      <p class="note">每日期僅能送出一次請假。</p>
-      <div class="split-two">
-        <div>
-          <h3 class="subhead">男生</h3>
-          <div id="memberListMale" class="member-list" aria-live="polite"></div>
-        </div>
-        <div>
-          <h3 class="subhead">女生</h3>
-          <div id="memberListFemale" class="member-list" aria-live="polite"></div>
-        </div>
+    <div class="dashboard-grid">
+      <div class="dashboard-main">
+        <section class="dashboard-card panel-final">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-index">LIVE ROSTER</p>
+              <h2>最終人員名單</h2>
+            </div>
+            <div class="panel-actions">
+              <button id="triggerSettlementBtn" class="btn" type="button">觸發結算</button>
+              <button id="refreshFinalBtn" class="btn icon-btn" type="button" aria-label="刷新最終名單" title="刷新最終名單">↻</button>
+            </div>
+          </div>
+          <p id="settlementInfo" class="status-line"></p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>姓名</th><th>性別</th><th>來源</th></tr></thead>
+              <tbody id="finalListBody"><tr><td colspan="3"><span class="skeleton skeleton-line"></span></td></tr></tbody>
+            </table>
+          </div>
+          <p id="finalSummary" class="final-summary"></p>
+        </section>
+
+        <section class="dashboard-card panel-members">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-index">FIXED PLAYERS</p>
+              <h2>固定人員請假</h2>
+            </div>
+            <span class="section-chip">每人每場一次</span>
+          </div>
+          <div class="split-two">
+            <div class="roster-column">
+              <h3 class="subhead"><span class="gender-dot male"></span>男生</h3>
+              <div id="memberListMale" class="member-list" aria-live="polite"></div>
+            </div>
+            <div class="roster-column">
+              <h3 class="subhead"><span class="gender-dot female"></span>女生</h3>
+              <div id="memberListFemale" class="member-list" aria-live="polite"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="dashboard-card panel-extra">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-index">EXTRA PLAYERS</p>
+              <h2>臨打報名清單</h2>
+            </div>
+            <button id="refreshExtraBtn" class="btn icon-btn" type="button" title="刷新臨打報名">↻</button>
+          </div>
+          <div class="table-wrap wide-table">
+            <table>
+              <thead><tr><th>類型</th><th>姓名</th><th>狀態</th><th>收費</th><th>備註</th><th>操作</th></tr></thead>
+              <tbody id="extraListBody"><tr><td colspan="6"><span class="skeleton skeleton-line"></span></td></tr></tbody>
+            </table>
+          </div>
+        </section>
       </div>
-    </section>
 
-    <section class="panel panel-media panel-extra">
-      <h2>臨打報名</h2>
-      <form id="extraForm" class="form-grid">
-        <label for="extraType">臨打類型</label>
-        <select id="extraType" required>
-          <option value="MALE">男生 1 位</option>
-          <option value="FEMALE">女生 1 位</option>
-          <option value="PAIR">1 男 1女</option>
-        </select>
+      <aside class="dashboard-side">
+        <section class="dashboard-card venue-settings">
+          <p class="section-index">SESSION SETTINGS</p>
+          <h2>場地與費用</h2>
+          <div class="fee-display">
+            <span>臨打費用</span>
+            <strong id="extraFeeInfo">每人 190 元</strong>
+          </div>
+          <div class="venue-actions">
+            <label class="toggle-line">
+              <input id="hasAirConditioning" type="checkbox" />
+              <span class="toggle-ui"></span>
+              <span>本場開冷氣</span>
+            </label>
+            <button id="saveVenueSettingsBtn" class="btn full-btn" type="button">儲存場地設定</button>
+          </div>
+        </section>
 
-        <div id="maleField">
-          <label for="maleName">男生姓名</label>
-          <input id="maleName" type="text" maxlength="50" />
-        </div>
+        <section class="dashboard-card signup-card">
+          <p class="section-index">NEW SIGNUP</p>
+          <h2>新增臨打</h2>
+          <form id="extraForm" class="form-grid">
+            <label for="extraType">臨打類型</label>
+            <select id="extraType" required>
+              <option value="MALE">男生 1 位</option>
+              <option value="FEMALE">女生 1 位</option>
+              <option value="PAIR">1 男 1 女</option>
+            </select>
 
-        <div id="femaleField">
-          <label for="femaleName">女生姓名</label>
-          <input id="femaleName" type="text" maxlength="50" />
-        </div>
+            <div id="maleField">
+              <label for="maleName">男生姓名</label>
+              <input id="maleName" type="text" maxlength="50" placeholder="輸入姓名" />
+            </div>
+            <div id="femaleField">
+              <label for="femaleName">女生姓名</label>
+              <input id="femaleName" type="text" maxlength="50" placeholder="輸入姓名" />
+            </div>
 
-        <label id="pairRuleField" class="checkbox-line"><input id="pairMustTogether" type="checkbox" /> 一男一女需同時補上，否則放棄</label>
+            <label id="pairRuleField" class="checkbox-line">
+              <input id="pairMustTogether" type="checkbox" />
+              一男一女需同時補上
+            </label>
 
-        <label for="extraNote">備註</label>
-        <input id="extraNote" type="text" maxlength="120" placeholder="例如：候補、只能 20:00 後到場" />
+            <label for="extraNote">備註</label>
+            <input id="extraNote" type="text" maxlength="120" placeholder="例如：20:00 後到場" />
+            <button id="extraSubmitBtn" class="btn primary full-btn" type="submit">送出臨打報名 <span>→</span></button>
+          </form>
+        </section>
 
-        <button id="extraSubmitBtn" class="btn primary" type="submit">送出臨打報名</button>
-      </form>
-    </section>
-
-    <section class="panel panel-media panel-extra">
-      <div class="row between">
-        <h2>臨打報名清單</h2>
-        <button id="refreshExtraBtn" class="btn icon-btn" type="button" title="刷新臨打報名">↻</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>類型</th>
-              <th>姓名</th>
-              <th>狀態</th>
-              <th>收費</th>
-              <th>備註</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="extraListBody"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel panel-media panel-final">
-      <div class="row between">
-        <h2>最終人員名單</h2>
-        <div class="row gap">
-          <button id="triggerSettlementBtn" class="btn" type="button">觸發結算</button>
-          <button id="refreshFinalBtn" class="btn icon-btn" type="button" aria-label="刷新最終名單" title="刷新最終名單">↻</button>
-        </div>
-      </div>
-      <p id="settlementInfo" class="note"></p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>姓名</th>
-              <th>性別</th>
-              <th>來源</th>
-            </tr>
-          </thead>
-          <tbody id="finalListBody"></tbody>
-        </table>
-      </div>
-      <p id="finalSummary" class="final-summary"></p>
-    </section>
-
-    <section class="panel panel-media panel-final">
-      <details id="auditSection">
-        <summary>異動紀錄（請假 / 臨打報名）</summary>
-        <div class="row between audit-head">
-          <p class="note">預設收合，點開可檢視該日期的新增/取消時間。</p>
-          <button id="refreshAuditBtn" class="btn icon-btn" type="button" title="刷新異動紀錄">↻</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>時間</th>
-                <th>類別</th>
-                <th>動作</th>
-                <th>內容</th>
-              </tr>
-            </thead>
-            <tbody id="auditBody"></tbody>
-          </table>
-        </div>
-      </details>
-    </section>
+        <section class="dashboard-card audit-card">
+          <details id="auditSection">
+            <summary>
+              <span><small>ACTIVITY</small>異動紀錄</span>
+              <span class="details-icon">＋</span>
+            </summary>
+            <div class="audit-head">
+              <p class="note">請假、報名、收費與結算紀錄。</p>
+              <button id="refreshAuditBtn" class="btn icon-btn" type="button" title="刷新異動紀錄">↻</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>時間</th><th>類別</th><th>動作</th><th>內容</th></tr></thead>
+                <tbody id="auditBody"></tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+      </aside>
+    </div>
   </main>
 
-  <footer class="site-footer">
-    <p>Monday Spike Club</p>
+  <footer class="site-footer container">
+    <div class="brand compact"><span class="brand-mark">M</span><strong>Monday Spike</strong></div>
     <p>Today we connect. Tomorrow we fly.</p>
   </footer>
 

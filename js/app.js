@@ -66,6 +66,7 @@ async function initIndexPage() {
     await ensureLiffIdentityReady(false);
     await loadControlConfig(false);
     renderIndexDateControls();
+    renderHomeMeta();
   } catch (error) {
     showDateListMessage(`設定讀取失敗：${escapeHtml(error.message)}`);
     disableIndexControls();
@@ -104,6 +105,18 @@ function renderIndexDateControls() {
   document.getElementById("goDateBtn").disabled = false;
 }
 
+function renderHomeMeta() {
+  const count = document.getElementById("homeDateCount");
+  const nextDate = document.getElementById("homeNextDate");
+  const userName = document.getElementById("homeUserName");
+  if (count) count.textContent = String(state.availableDates.length);
+  if (nextDate) {
+    const next = state.availableDates.find((item) => item.date >= state.policy.today) || state.availableDates[0];
+    nextDate.textContent = next ? (next.label || next.date) : "尚未開放";
+  }
+  if (userName) userName.textContent = state.lineDisplayName || "LINE 使用者";
+}
+
 async function initDatePage() {
   const date = getDateFromQuery();
   const pageError = document.getElementById("pageError");
@@ -127,6 +140,7 @@ async function initDatePage() {
     document.getElementById("pageSubTitle").textContent = state.isDateLocked
       ? `日期：${date}（已過期，僅可檢視資料）`
       : `日期：${date}`;
+    renderPageModeBadge();
 
     bindExtraForm(date);
     bindRefreshButtons(date);
@@ -405,6 +419,13 @@ async function loadPageData(date) {
   renderAuditLogs(data.auditRecords);
 }
 
+function renderPageModeBadge() {
+  const badge = document.getElementById("pageModeBadge");
+  if (!badge) return;
+  badge.classList.toggle("locked", state.isDateLocked);
+  badge.innerHTML = state.isDateLocked ? "<i></i> READ ONLY" : "<i></i> SYNCED";
+}
+
 function renderFinalList(records) {
   const body = document.getElementById("finalListBody");
   const summary = document.getElementById("finalSummary");
@@ -413,6 +434,7 @@ function renderFinalList(records) {
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="3">目前沒有資料</td></tr>`;
     summary.textContent = "總人數：0 / 18";
+    updateDashboardRosterMetrics([]);
     return;
   }
 
@@ -438,6 +460,15 @@ function renderFinalList(records) {
 
   body.innerHTML = html;
   summary.textContent = `總人數：${rows.length} / 18，女生：${femaleRows.length} / 9`;
+  updateDashboardRosterMetrics(rows);
+}
+
+function updateDashboardRosterMetrics(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const total = document.getElementById("dashboardTotal");
+  const female = document.getElementById("dashboardFemale");
+  if (total) total.textContent = String(list.length);
+  if (female) female.textContent = String(list.filter((row) => row.gender === "女").length);
 }
 
 function renderAuditLogs(records) {
@@ -469,8 +500,10 @@ function renderExtraList(date, records) {
   const rows = Array.isArray(records) ? records : [];
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="6">目前沒有資料</td></tr>`;
+    updateDashboardExtraMetrics([]);
     return;
   }
+  updateDashboardExtraMetrics(rows);
 
   body.innerHTML = rows.map((r) => {
     const who = r.type === "MALE" ? r.maleName : r.type === "FEMALE" ? r.femaleName : `${r.maleName} + ${r.femaleName}`;
@@ -542,6 +575,18 @@ function renderExtraList(date, records) {
   }
 }
 
+function updateDashboardExtraMetrics(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const waitlist = document.getElementById("dashboardWaitlist");
+  const paid = document.getElementById("dashboardPaid");
+  if (waitlist) {
+    waitlist.textContent = String(list.filter((row) => String(row.status || "") !== "已補上").length);
+  }
+  if (paid) {
+    paid.textContent = String(list.filter((row) => row.isPaid === true || row.isPaid === "1").length);
+  }
+}
+
 async function loadFinalList(date) {
   const body = document.getElementById("finalListBody");
   const summary = document.getElementById("finalSummary");
@@ -553,6 +598,7 @@ async function loadFinalList(date) {
     if (!rows.length) {
       body.innerHTML = `<tr><td colspan="3">目前沒有資料</td></tr>`;
       summary.textContent = "總人數：0 / 18";
+      updateDashboardRosterMetrics([]);
       return;
     }
 
@@ -581,6 +627,7 @@ async function loadFinalList(date) {
     body.innerHTML = html;
 
     summary.textContent = `總人數：${rows.length} / 18，男生：${maleCount} 人，女生：${femaleCount} 人`;
+    updateDashboardRosterMetrics(rows);
   } catch (error) {
     body.innerHTML = `<tr><td colspan="3">載入失敗：${escapeHtml(error.message)}</td></tr>`;
     summary.textContent = "";
@@ -764,12 +811,12 @@ async function mockApi(params) {
         if (ex.type === "PAIR") {
           if (ex.pairMustTogether === "1") {
             if (fixed.length <= 16) {
-              fixed.push({ name: ex.maleName, gender: "男", source: "臨打報名(配對)" });
-              fixed.push({ name: ex.femaleName, gender: "女", source: "臨打報名(配對)" });
+              fixed.push({ name: ex.maleName, gender: "男", source: "臨打報名(綁定)" });
+              fixed.push({ name: ex.femaleName, gender: "女", source: "臨打報名(綁定)" });
             }
           } else {
-            fixed.push({ name: ex.femaleName, gender: "女", source: "臨打報名(配對-女)" });
-            if (fixed.length < 18) fixed.push({ name: ex.maleName, gender: "男", source: "臨打報名(配對-男)" });
+            fixed.push({ name: ex.femaleName, gender: "女", source: "臨打報名(綁定-女)" });
+            if (fixed.length < 18) fixed.push({ name: ex.maleName, gender: "男", source: "臨打報名(綁定-男)" });
           }
         }
       }
