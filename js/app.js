@@ -16,7 +16,25 @@ const state = {
   lineUserId: "",
   lineDisplayName: "",
   lineIdToken: "",
-  liffStatus: { sdk: false, initialized: false, inClient: false, loggedIn: false, profileReady: false, idTokenReady: false, error: "" },
+  liffStatus: {
+    sdk: false,
+    initialized: false,
+    inClient: false,
+    loggedIn: false,
+    profileReady: false,
+    idTokenReady: false,
+    configuredLiffId: "",
+    runtimeLiffId: "",
+    contextLiffId: "",
+    liffIdMatches: false,
+    accessTokenReady: false,
+    accessTokenHash: "",
+    scopes: [],
+    profileScope: false,
+    endpointUrl: "",
+    errorCode: "",
+    error: ""
+  },
   policy: { allowUserEdit: true, allowEditPastDate: false, enableManualSettlementTrigger: true, today: "" },
   currentDate: "",
   isDateLocked: false
@@ -823,6 +841,7 @@ function ensureApiConfigured() {
 
 async function initLiffSafe() {
   state.liffStatus.sdk = !!window.liff;
+  state.liffStatus.configuredLiffId = String(APP_CONFIG.liffId || "").trim();
   if (!window.liff) {
     state.liffStatus.error = "LIFF SDK 未載入";
     renderLiffDebug();
@@ -837,8 +856,10 @@ async function initLiffSafe() {
   try {
     await withTimeout(window.liff.init({ liffId: APP_CONFIG.liffId }), 5000);
     state.liffStatus.initialized = true;
+    state.liffStatus.runtimeLiffId = String(window.liff.id || "").trim();
     state.liffStatus.inClient = window.liff.isInClient();
     state.liffStatus.loggedIn = window.liff.isLoggedIn();
+    collectLiffDiagnostics();
     if (!window.liff.isLoggedIn()) {
       window.liff.login({ redirectUri: location.href });
       renderLiffDebug();
@@ -852,31 +873,69 @@ async function initLiffSafe() {
     if (decoded) {
       state.lineUserId = String(decoded.sub || "").trim();
       state.lineDisplayName = String(decoded.name || "").trim();
-      state.liffStatus.profileReady = !!state.lineUserId;
+      state.liffStatus.profileReady = !!state.lineUserId && !!state.lineDisplayName;
     }
 
-    try {
-      const profile = await withTimeout(window.liff.getProfile(), 10000);
-      state.lineUserId = String(profile.userId || state.lineUserId || "").trim();
-      state.lineDisplayName = String(profile.displayName || state.lineDisplayName || "WTF").trim();
-      state.liffStatus.profileReady = !!state.lineUserId;
-      console.log("displayName:", profile?.displayName);
-      console.log("userId:", profile?.userId);
-      console.log("pictureUrl:", profile?.pictureUrl);
-      console.log("profile.statusMessage:", profile?.statusMessage);
-      console.log(await liff.getProfile());
-      console.log(await window.liff.console());
-    } catch (profileError) {
-      state.liffStatus.error = `getProfile 失敗：${profileError.message || profileError}`;
+    if (!state.liffStatus.liffIdMatches) {
+      state.liffStatus.errorCode = "LIFF_ID_MISMATCH";
+      state.liffStatus.error = "LIFF ID 不一致，請確認 APP_CONFIG.liffId 與 LINE Developers 的 LIFF App ID";
+    } else if (!state.liffStatus.accessTokenReady) {
+      state.liffStatus.errorCode = "ACCESS_TOKEN_MISSING";
+      state.liffStatus.error = "LIFF 已登入但未取得使用者 access token，請重新登入或重新開啟 LIFF URL";
+    } else if (!state.liffStatus.profileScope) {
+      state.liffStatus.errorCode = "MISSING_PROFILE_SCOPE";
+      state.liffStatus.error = "getProfile 失敗：LIFF App Scope 缺少 profile，請到 LINE Developers 的 LIFF 設定勾選 profile";
+    } else {
+      try {
+        const profile = await withTimeout(window.liff.getProfile(), 10000);
+        state.lineUserId = String(profile.userId || state.lineUserId || "").trim();
+        state.lineDisplayName = String(profile.displayName || state.lineDisplayName || "").trim();
+        state.liffStatus.profileReady = !!state.lineUserId && !!state.lineDisplayName;
+        console.log("LIFF profile:", {
+          userId: profile.userId || "",
+          displayName: profile.displayName || "",
+          pictureUrl: profile.pictureUrl || "",
+          statusMessage: profile.statusMessage || ""
+        });
+      } catch (profileError) {
+        state.liffStatus.errorCode = String(profileError && profileError.code || "").trim();
+        state.liffStatus.error = `getProfile 失敗：${profileError && profileError.message || profileError}`;
+      }
     }
     applyCachedLineIdentity();
     saveLineIdentityCache();
   } catch (error) {
+    state.liffStatus.errorCode = String(error && error.code || "").trim();
     state.liffStatus.error = error.message || String(error);
     console.warn("LIFF init failed:", error);
   } finally {
     renderLiffDebug();
   }
+}
+
+function collectLiffDiagnostics() {
+  if (!window.liff) return;
+
+  const context = typeof window.liff.getContext === "function" ? window.liff.getContext() : null;
+  const scopes = Array.isArray(context && context.scope) ? context.scope.map(String) : [];
+  const configuredLiffId = String(APP_CONFIG.liffId || "").trim();
+  const runtimeLiffId = String(window.liff.id || "").trim();
+  const contextLiffId = String(context && context.liffId || "").trim();
+
+  state.liffStatus.configuredLiffId = configuredLiffId;
+  state.liffStatus.runtimeLiffId = runtimeLiffId;
+  state.liffStatus.contextLiffId = contextLiffId;
+  state.liffStatus.liffIdMatches =
+    !!configuredLiffId &&
+    configuredLiffId === runtimeLiffId &&
+    (!contextLiffId || configuredLiffId === contextLiffId);
+  state.liffStatus.scopes = scopes;
+  state.liffStatus.profileScope = scopes.indexOf("profile") >= 0;
+  state.liffStatus.endpointUrl = String(context && context.endpointUrl || "").trim();
+  state.liffStatus.accessTokenHash = String(context && context.accessTokenHash || "").trim();
+
+  const accessToken = typeof window.liff.getAccessToken === "function" ? window.liff.getAccessToken() : null;
+  state.liffStatus.accessTokenReady = !!accessToken;
 }
 
 function withLineIdentity(params) {
@@ -910,7 +969,7 @@ async function ensureLiffIdentityReady(required) {
 
 function buildLiffStatusText() {
   const s = state.liffStatus || {};
-  return `目前狀態：sdk=${!!s.sdk}, init=${!!s.initialized}, inClient=${!!s.inClient}, loggedIn=${!!s.loggedIn}, profile=${!!s.profileReady}, idToken=${!!s.idTokenReady}${s.error ? `, error=${s.error}` : ""}`;
+  return `目前狀態：sdk=${!!s.sdk}, init=${!!s.initialized}, inClient=${!!s.inClient}, loggedIn=${!!s.loggedIn}, profile=${!!s.profileReady}, idToken=${!!s.idTokenReady}, accessToken=${!!s.accessTokenReady}, profileScope=${!!s.profileScope}${s.errorCode ? `, errorCode=${s.errorCode}` : ""}${s.error ? `, error=${s.error}` : ""}`;
 }
 
 function loadCachedLineIdentity() {
@@ -959,6 +1018,15 @@ function renderLiffDebug() {
   box.textContent = [
     "LIFF DEBUG",
     buildLiffStatusText(),
+    `configuredLiffId=${state.liffStatus.configuredLiffId || "(empty)"}`,
+    `runtimeLiffId=${state.liffStatus.runtimeLiffId || "(empty)"}`,
+    `contextLiffId=${state.liffStatus.contextLiffId || "(empty)"}`,
+    `liffIdMatches=${!!state.liffStatus.liffIdMatches}`,
+    `scopes=${state.liffStatus.scopes.length ? state.liffStatus.scopes.join(",") : "(empty)"}`,
+    `profileScope=${!!state.liffStatus.profileScope}`,
+    `accessTokenReady=${!!state.liffStatus.accessTokenReady}`,
+    `accessTokenHash=${state.liffStatus.accessTokenHash || "(empty)"}`,
+    `endpointUrl=${state.liffStatus.endpointUrl || "(empty)"}`,
     `lineUserId=${state.lineUserId || "(empty)"}`,
     `lineDisplayName=${state.lineDisplayName || "(empty)"}`,
     `url=${location.href}`
