@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0B0F19" />
+  <title>Monday Spike | 場次統計</title>
+  <script>
+    window.MONDAY_SPIKE_ASSET_VERSION = Date.now().toString();
+    document.write('<link rel="stylesheet" href="./css/style.css?v=' + window.MONDAY_SPIKE_ASSET_VERSION + '" />');
+  </script>
+  <noscript><link rel="stylesheet" href="./css/style.css" /></noscript>
+</head>
+<body class="page-stats">
+  <div class="ambient-bg" aria-hidden="true">
+    <span class="glow glow-one"></span>
+    <span class="glow glow-two"></span>
+    <span class="noise"></span>
+  </div>
+
+  <div id="globalLoading" class="global-loading" hidden>
+    <div class="loading-panel">
+      <div class="loading-orb" aria-hidden="true"></div>
+      <p data-loading-text>正在彙整歷史資料...</p>
+      <div class="loading-bar" aria-hidden="true"><span></span></div>
+    </div>
+  </div>
+
+  <nav class="app-nav container" aria-label="統計頁導覽">
+    <a class="brand" href="./index.html">
+      <span class="brand-mark">M</span>
+      <span class="brand-copy"><strong>Monday Spike</strong><small>Statistics</small></span>
+    </a>
+    <div class="nav-actions">
+      <span class="live-pill"><i></i> HISTORY</span>
+      <a class="nav-link" href="./index.html">所有場次</a>
+    </div>
+  </nav>
+
+  <main class="container stats-shell">
+    <header class="stats-hero">
+      <div>
+        <a href="./index.html" class="back-link">← 返回首頁</a>
+        <p class="eyebrow">SESSION ANALYTICS</p>
+        <h1>每週場次統計</h1>
+        <p class="hero-lead">按日期查看固打請假、臨打補位結果與最終男女人數。</p>
+      </div>
+      <button id="refreshStatsBtn" class="btn icon-btn" type="button" title="刷新統計" aria-label="刷新統計">↻</button>
+    </header>
+
+    <section class="stats-legend" aria-label="統計說明">
+      <span><i class="legend-dot leave"></i>固打請假</span>
+      <span><i class="legend-dot filled"></i>臨打補上</span>
+      <span><i class="legend-dot waiting"></i>臨打沒補上</span>
+      <span><i class="legend-dot male"></i>男生</span>
+      <span><i class="legend-dot female"></i>女生</span>
+    </section>
+
+    <section id="statsList" class="stats-list" aria-live="polite">
+      <article class="dashboard-card skeleton skeleton-card"></article>
+      <article class="dashboard-card skeleton skeleton-card"></article>
+    </section>
+    <p id="statsError" class="error-text" hidden></p>
+  </main>
+
+  <footer class="site-footer container">
+    <div class="brand compact"><span class="brand-mark">M</span><strong>Monday Spike</strong></div>
+    <p>History, without the spreadsheet hunt.</p>
+  </footer>
+
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script>
+    document.write('<script src="./js/app.js?v=' + window.MONDAY_SPIKE_ASSET_VERSION + '"><\/script>');
+  </script>
+</body>
+</html>

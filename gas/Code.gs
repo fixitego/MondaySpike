@@ -39,6 +39,10 @@ function doGet(e) {
       return jsonOutput(getConfigResponse());
     }
 
+    if (action === 'statistics') {
+      return jsonOutput({ ok: true, records: getStatisticsReport() });
+    }
+
     if (action === 'page_data') {
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
@@ -1324,6 +1328,79 @@ function getFinalListByDate(date) {
       signupId: normalize(rows[i][4])
     });
   }
+  return result;
+}
+
+function getStatisticsReport() {
+  var dateRows = getSheet(DATES_SHEET).getDataRange().getDisplayValues();
+  var leaveRows = getSheet(LEAVE_SHEET).getDataRange().getDisplayValues();
+  var extraRows = getSheet(EXTRA_SHEET).getDataRange().getDisplayValues();
+  var finalRows = getSheet(FINAL_SHEET).getDataRange().getDisplayValues();
+  var byDate = {};
+
+  function ensureDate(date) {
+    var value = normalize(date);
+    if (!isIsoDate(value)) return null;
+    if (!byDate[value]) {
+      byDate[value] = {
+        date: value,
+        label: value,
+        fixedLeave: 0,
+        extraTotal: 0,
+        extraFilled: 0,
+        extraUnfilled: 0,
+        male: 0,
+        female: 0
+      };
+    }
+    return byDate[value];
+  }
+
+  for (var i = 1; i < dateRows.length; i += 1) {
+    var dateItem = ensureDate(dateRows[i][0]);
+    if (dateItem) dateItem.label = normalize(dateRows[i][1]) || dateItem.date;
+  }
+
+  var leaveSeen = {};
+  for (var j = 1; j < leaveRows.length; j += 1) {
+    var leaveItem = ensureDate(leaveRows[j][0]);
+    var memberId = normalize(leaveRows[j][1]);
+    if (!leaveItem || !memberId) continue;
+    var leaveKey = leaveItem.date + '|' + memberId;
+    if (leaveSeen[leaveKey]) continue;
+    leaveSeen[leaveKey] = true;
+    leaveItem.fixedLeave += 1;
+  }
+
+  for (var k = 1; k < extraRows.length; k += 1) {
+    if (normalize(extraRows[k][7]) === '1') continue;
+    var extraItem = ensureDate(extraRows[k][1]);
+    if (!extraItem) continue;
+    extraItem.extraTotal += normalize(extraRows[k][2]).toUpperCase() === 'PAIR' ? 2 : 1;
+  }
+
+  for (var m = 1; m < finalRows.length; m += 1) {
+    var finalItem = ensureDate(finalRows[m][0]);
+    if (!finalItem) continue;
+    var gender = normalize(finalRows[m][2]);
+    var source = normalize(finalRows[m][3]);
+    if (gender === '男') finalItem.male += 1;
+    if (gender === '女') finalItem.female += 1;
+    if (source.indexOf('臨打報名') === 0 || source.indexOf('額外報名') === 0) {
+      finalItem.extraFilled += 1;
+    }
+  }
+
+  var result = [];
+  for (var date in byDate) {
+    if (!byDate.hasOwnProperty(date)) continue;
+    byDate[date].extraUnfilled = Math.max(0, byDate[date].extraTotal - byDate[date].extraFilled);
+    delete byDate[date].extraTotal;
+    result.push(byDate[date]);
+  }
+  result.sort(function (a, b) {
+    return a.date > b.date ? -1 : a.date < b.date ? 1 : 0;
+  });
   return result;
 }
 

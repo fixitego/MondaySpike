@@ -47,10 +47,12 @@ document.addEventListener("DOMContentLoaded", () => {
   liffReadyPromise = initLiffSafe();
   if (isIndexPage()) return initIndexPage();
   if (isDatePage()) return initDatePage();
+  if (isStatsPage()) return initStatsPage();
 });
 
 function isIndexPage() { return !!document.getElementById("dateList"); }
 function isDatePage() { return !!document.getElementById("memberListMale"); }
+function isStatsPage() { return !!document.getElementById("statsList"); }
 
 async function initIndexPage() {
   const goDateBtn = document.getElementById("goDateBtn");
@@ -122,6 +124,83 @@ function renderHomeMeta() {
     nextDate.textContent = next ? (next.label || next.date) : "尚未開放";
   }
   if (userName) userName.textContent = state.lineDisplayName || "LINE 使用者";
+}
+
+async function initStatsPage() {
+  const refreshBtn = document.getElementById("refreshStatsBtn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", async () => {
+      refreshBtn.disabled = true;
+      refreshBtn.classList.add("is-loading");
+      try {
+        await loadStatistics();
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.classList.remove("is-loading");
+      }
+    });
+  }
+
+  showGlobalLoading("正在彙整歷史資料...");
+  try {
+    await loadStatistics();
+  } finally {
+    hideGlobalLoading();
+  }
+}
+
+async function loadStatistics() {
+  const list = document.getElementById("statsList");
+  const error = document.getElementById("statsError");
+  if (!list) return;
+  if (error) error.hidden = true;
+
+  try {
+    const data = await callApi({ action: "statistics" });
+    renderStatistics(data.records);
+  } catch (err) {
+    list.innerHTML = "";
+    if (error) {
+      error.hidden = false;
+      error.textContent = `統計讀取失敗：${err.message}`;
+    }
+  }
+}
+
+function renderStatistics(records) {
+  const list = document.getElementById("statsList");
+  if (!list) return;
+  const rows = Array.isArray(records) ? records : [];
+  if (!rows.length) {
+    list.innerHTML = `<div class="empty-state">目前沒有可統計的場次資料</div>`;
+    return;
+  }
+
+  list.innerHTML = rows.map((row) => `
+    <article class="dashboard-card stats-card">
+      <header class="stats-card-head">
+        <div>
+          <span class="stats-date-label">${escapeHtml(row.label || row.date)}</span>
+          <strong>${escapeHtml(row.date)}</strong>
+        </div>
+        <span class="stats-total">${Number(row.male || 0) + Number(row.female || 0)} 人</span>
+      </header>
+      <div class="stats-values">
+        ${buildStatsValue("固打請假", row.fixedLeave, "leave")}
+        ${buildStatsValue("臨打補上", row.extraFilled, "filled")}
+        ${buildStatsValue("臨打沒補上", row.extraUnfilled, "waiting")}
+        ${buildStatsValue("男生", row.male, "male")}
+        ${buildStatsValue("女生", row.female, "female")}
+      </div>
+    </article>
+  `).join("");
+}
+
+function buildStatsValue(label, value, type) {
+  return `<div class="stats-value ${type}">
+    <span>${escapeHtml(label)}</span>
+    <strong>${Number(value || 0)}</strong>
+  </div>`;
 }
 
 async function initDatePage() {
@@ -816,6 +895,26 @@ async function mockApi(params) {
       fixedMembers: mock.fixedMembers,
       policy: { allowUserEdit: true, enableManualSettlementTrigger: true }
     };
+  }
+
+  if (params.action === "statistics") {
+    const records = await Promise.all(mock.availableDates.map(async (item) => {
+      const finalData = await mockApi({ action: "final_list", date: item.date });
+      const extras = getMockExtras(item.date);
+      const extraTotal = extras.reduce((sum, row) => sum + (row.type === "PAIR" ? 2 : 1), 0);
+      const extraFilled = finalData.records.filter((row) => String(row.source || "").indexOf("臨打報名") === 0).length;
+      return {
+        date: item.date,
+        label: item.label,
+        fixedLeave: getMockLeaves(item.date).size,
+        extraFilled,
+        extraUnfilled: Math.max(0, extraTotal - extraFilled),
+        male: finalData.records.filter((row) => row.gender === "男").length,
+        female: finalData.records.filter((row) => row.gender === "女").length
+      };
+    }));
+    records.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    return { ok: true, records };
   }
 
   if (params.action === "final_list") {
