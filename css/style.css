@@ -398,6 +398,36 @@ select:focus {
 
 .checkbox-line input { width: auto; }
 
+.venue-settings h2 { margin-bottom: 4px; }
+
+.venue-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.payment-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: .72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.payment-status.paid {
+  color: #376b52;
+  background: #e5f3e9;
+}
+
+.payment-status.unpaid {
+  color: #9a6441;
+  background: #fff0df;
+}
+
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
@@ -627,4 +657,5 @@ tr.gender-female td { background: rgba(253, 242, 247, 0.82); }
   .hero-track,
   .hero-track img { height: 136px; }
   .site-footer { flex-direction: column; }
+  .venue-actions { justify-content: flex-start; }
 }

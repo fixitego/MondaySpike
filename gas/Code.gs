@@ -6,6 +6,7 @@ const EXTRA_SHEET = 'extra_signups';
 const FINAL_SHEET = 'final_list';
 const SETTLE_SHEET = 'settlement_control';
 const SETTLEMENT_LOGS_SHEET = 'settlement_logs';
+const PAYMENT_LOGS_SHEET = 'payment_logs';
 const LINE_GROUPS_SHEET = 'line_groups';
 const LINE_WEBHOOK_LOGS_SHEET = 'line_webhook_logs';
 
@@ -78,6 +79,18 @@ function doGet(e) {
       return jsonOutput({ ok: true });
     }
 
+    if (action === 'update_extra_payment') {
+      assertEditableDate(normalize(e.parameter.date));
+      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
+      updateExtraPayment(
+        normalize(e.parameter.signupId),
+        normalize(e.parameter.date),
+        normalize(e.parameter.isPaid),
+        getLineIdentityForRecord(e.parameter)
+      );
+      return jsonOutput({ ok: true });
+    }
+
     if (action === 'extra_list') {
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
@@ -93,6 +106,15 @@ function doGet(e) {
     if (action === 'settlement_status') {
       const date = normalize(e.parameter.date);
       validateDateIsAvailable(date);
+      return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
+    }
+
+    if (action === 'update_date_settings') {
+      assertEditableDate(normalize(e.parameter.date));
+      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
+      const date = normalize(e.parameter.date);
+      validateDateIsAvailable(date);
+      updateDateSettings(date, normalize(e.parameter.hasAirConditioning), getLineIdentityForRecord(e.parameter));
       return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
     }
 
@@ -154,6 +176,18 @@ function doPost(e) {
       return jsonOutput({ ok: true });
     }
 
+    if (action === 'update_extra_payment') {
+      assertEditableDate(normalize(payload.date));
+      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
+      updateExtraPayment(
+        normalize(payload.signupId),
+        normalize(payload.date),
+        normalize(payload.isPaid),
+        getLineIdentityForRecord(payload)
+      );
+      return jsonOutput({ ok: true });
+    }
+
     if (action === 'trigger_settlement') {
       assertEditableDate(normalize(payload.date));
       requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
@@ -161,6 +195,15 @@ function doPost(e) {
       validateDateIsAvailable(date);
       triggerSettlement(date, 'manual_post_trigger', getLineIdentityForRecord(payload));
       rebuildFinalListForDate(date);
+      return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
+    }
+
+    if (action === 'update_date_settings') {
+      assertEditableDate(normalize(payload.date));
+      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
+      const date = normalize(payload.date);
+      validateDateIsAvailable(date);
+      updateDateSettings(date, normalize(payload.hasAirConditioning), getLineIdentityForRecord(payload));
       return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
     }
 
@@ -319,7 +362,11 @@ function saveExtraSignup(payload) {
     nowIso(),
     '',
     lineIdentity.userId,
-    lineIdentity.displayName
+    lineIdentity.displayName,
+    '0',
+    '',
+    '',
+    ''
   ]);
 }
 
@@ -335,6 +382,40 @@ function cancelExtraSignup(signupId) {
       return;
     }
   }
+  throw new Error('signup not found');
+}
+
+function updateExtraPayment(signupId, date, isPaidValue, lineIdentity) {
+  if (!signupId) throw new Error('signupId required');
+  validateDateIsAvailable(date);
+
+  var isPaid = isTruthyValue(isPaidValue);
+  var identity = lineIdentity || { userId: '', displayName: '' };
+  var sheet = getSheet(EXTRA_SHEET);
+  var rows = sheet.getDataRange().getDisplayValues();
+  var now = nowIso();
+
+  for (var i = 1; i < rows.length; i += 1) {
+    if (normalize(rows[i][0]) !== signupId) continue;
+    if (normalize(rows[i][1]) !== date) throw new Error('signup date mismatch');
+    if (normalize(rows[i][7]) === '1') throw new Error('canceled signup cannot update payment');
+
+    sheet.getRange(i + 1, 13).setValue(isPaid ? '1' : '0');
+    sheet.getRange(i + 1, 14).setValue(isPaid ? now : '');
+    sheet.getRange(i + 1, 15).setValue(isPaid ? normalize(identity.userId) : '');
+    sheet.getRange(i + 1, 16).setValue(isPaid ? normalize(identity.displayName) : '');
+
+    getSheet(PAYMENT_LOGS_SHEET).appendRow([
+      date,
+      signupId,
+      isPaid ? '標記已收費' : '取消已收費',
+      now,
+      normalize(identity.userId),
+      normalize(identity.displayName)
+    ]);
+    return;
+  }
+
   throw new Error('signup not found');
 }
 
@@ -393,7 +474,7 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
       if (used.count > 0) continue;
       var maleAdded = false;
       if (total + 1 <= TOTAL_LIMIT) {
-        result.push([date, r.maleName, '男', '額外報名', r.signupId]);
+        result.push([date, r.maleName, '男', '臨打報名', r.signupId]);
         total += 1;
         maleAdded = true;
         usedSignupIds[r.signupId] = { count: 1, male: true, female: false };
@@ -406,7 +487,7 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
       if (used.count > 0) continue;
       var femaleAdded = false;
       if (total + 1 <= TOTAL_LIMIT && females + 1 <= FEMALE_LIMIT) {
-        result.push([date, r.femaleName, '女', '額外報名', r.signupId]);
+        result.push([date, r.femaleName, '女', '臨打報名', r.signupId]);
         total += 1;
         females += 1;
         femaleAdded = true;
@@ -426,8 +507,8 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
       if (mustTogether) {
         if (used.count > 0) continue;
         if (total + 2 <= TOTAL_LIMIT && females + 1 <= FEMALE_LIMIT) {
-          result.push([date, r.maleName, '男', '額外報名(配對)', r.signupId]);
-          result.push([date, r.femaleName, '女', '額外報名(配對)', r.signupId]);
+          result.push([date, r.maleName, '男', '臨打報名(配對)', r.signupId]);
+          result.push([date, r.femaleName, '女', '臨打報名(配對)', r.signupId]);
           total += 2;
           females += 1;
           pairMaleAdded = true;
@@ -436,12 +517,12 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
         }
       } else {
         if (!used.male && canMale) {
-          result.push([date, r.maleName, '男', '額外報名(配對-男)', r.signupId]);
+          result.push([date, r.maleName, '男', '臨打報名(配對-男)', r.signupId]);
           total += 1;
           pairMaleAdded = true;
         }
         if (!used.female && canFemale && total < TOTAL_LIMIT) {
-          result.push([date, r.femaleName, '女', '額外報名(配對-女)', r.signupId]);
+          result.push([date, r.femaleName, '女', '臨打報名(配對-女)', r.signupId]);
           total += 1;
           females += 1;
           pairFemaleAdded = true;
@@ -519,7 +600,7 @@ function findSignupIdForFinalRow(row, records, usedSignupIds) {
   var name = normalize(row[1]);
   var gender = normalize(row[2]);
   var source = normalize(row[3]);
-  if (source.indexOf('額外報名') !== 0) return '';
+  if (source.indexOf('臨打報名') !== 0) return '';
 
   for (var i = 0; i < records.length; i += 1) {
     var r = records[i];
@@ -601,6 +682,10 @@ function getExtraSignupsWithStatus(date) {
       note: r.note,
       pairMustTogether: r.pairMustTogether,
       createdAt: r.createdAt,
+      isPaid: r.isPaid,
+      paidAt: r.paidAt,
+      paidByLineUserId: r.paidByLineUserId,
+      paidByDisplayName: r.paidByDisplayName,
       status: statusMap[r.signupId] || '候補'
     };
   });
@@ -611,6 +696,7 @@ function getAuditLogsByDate(date) {
   var leaveRows = getSheet(LEAVE_SHEET).getDataRange().getDisplayValues();
   var extraRows = getSheet(EXTRA_SHEET).getDataRange().getDisplayValues();
   var settlementRows = getSheet(SETTLEMENT_LOGS_SHEET).getDataRange().getDisplayValues();
+  var paymentRows = getSheet(PAYMENT_LOGS_SHEET).getDataRange().getDisplayValues();
 
   for (var i = 1; i < leaveRows.length; i += 1) {
     if (normalize(leaveRows[i][0]) !== date) continue;
@@ -626,14 +712,14 @@ function getAuditLogsByDate(date) {
     if (normalize(extraRows[j][1]) !== date) continue;
     logs.push({
       time: normalize(extraRows[j][8]),
-      kind: '額外報名',
+      kind: '臨打報名',
       action: '新增',
       detail: buildExtraDetail(normalize(extraRows[j][2]), normalize(extraRows[j][3]), normalize(extraRows[j][4]))
     });
     if (normalize(extraRows[j][7]) === '1') {
       logs.push({
         time: normalize(extraRows[j][9]),
-        kind: '額外報名',
+        kind: '臨打報名',
         action: '取消',
         detail: buildExtraDetail(normalize(extraRows[j][2]), normalize(extraRows[j][3]), normalize(extraRows[j][4]))
       });
@@ -647,6 +733,16 @@ function getAuditLogsByDate(date) {
       kind: '結算操作',
       action: normalize(settlementRows[k][1]) || '觸發',
       detail: buildSettlementAuditDetail(normalize(settlementRows[k][2]), normalize(settlementRows[k][4]), normalize(settlementRows[k][5]))
+    });
+  }
+
+  for (var p = 1; p < paymentRows.length; p += 1) {
+    if (normalize(paymentRows[p][0]) !== date) continue;
+    logs.push({
+      time: normalize(paymentRows[p][3]),
+      kind: '臨打收費',
+      action: normalize(paymentRows[p][2]),
+      detail: normalize(paymentRows[p][1]) + ' / 操作者：' + (normalize(paymentRows[p][5]) || normalize(paymentRows[p][4]) || '管理員')
     });
   }
 
@@ -814,18 +910,62 @@ function getDefaultPushDate() {
 function saveLineSource(source) {
   var sourceType = normalize(source.type);
   var sourceId = normalize(source.groupId || source.roomId || source.userId);
+  var userId = normalize(source.userId);
   if (!sourceType || !sourceId) return;
 
   var sheet = getSheet(LINE_GROUPS_SHEET);
   var rows = sheet.getDataRange().getDisplayValues();
   for (var i = 1; i < rows.length; i += 1) {
     if (normalize(rows[i][0]) === sourceType && normalize(rows[i][1]) === sourceId) {
-      sheet.getRange(i + 1, 3).setValue(normalize(source.userId));
+      var existingDisplayName = normalize(rows[i][5]);
+      var displayName = existingDisplayName;
+      if (!displayName || normalize(rows[i][2]) !== userId) {
+        var existingProfile = getLineSourceUserProfile(source);
+        displayName = normalize(existingProfile && existingProfile.displayName);
+      }
+      sheet.getRange(i + 1, 3).setValue(userId);
       sheet.getRange(i + 1, 4).setValue(nowIso());
+      sheet.getRange(i + 1, 6).setValue(displayName);
       return;
     }
   }
-  sheet.appendRow([sourceType, sourceId, normalize(source.userId), nowIso(), '']);
+  var profile = getLineSourceUserProfile(source);
+  var displayName = normalize(profile && profile.displayName);
+  sheet.appendRow([sourceType, sourceId, userId, nowIso(), '', displayName]);
+}
+
+function getLineSourceUserProfile(source) {
+  var sourceType = normalize(source && source.type);
+  var userId = normalize(source && source.userId);
+  if (!sourceType || !userId) return null;
+
+  var url = '';
+  if (sourceType === 'group') {
+    var groupId = normalize(source.groupId);
+    if (!groupId) return null;
+    url = 'https://api.line.me/v2/bot/group/' + encodeURIComponent(groupId) + '/member/' + encodeURIComponent(userId);
+  } else if (sourceType === 'room') {
+    var roomId = normalize(source.roomId);
+    if (!roomId) return null;
+    url = 'https://api.line.me/v2/bot/room/' + encodeURIComponent(roomId) + '/member/' + encodeURIComponent(userId);
+  } else if (sourceType === 'user') {
+    url = 'https://api.line.me/v2/bot/profile/' + encodeURIComponent(userId);
+  } else {
+    return null;
+  }
+
+  try {
+    var response = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: { Authorization: 'Bearer ' + getLineChannelAccessToken() },
+      muteHttpExceptions: true
+    });
+    if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) return null;
+    return JSON.parse(response.getContentText() || '{}');
+  } catch (err) {
+    appendLineWebhookLog(source, '', 'profile_lookup_failed', String(err));
+    return null;
+  }
 }
 
 function appendLineWebhookLog(source, text, action, detail) {
@@ -876,6 +1016,7 @@ function pushFinalListFlexMessage(date, groupId) {
 
 function buildFinalListFlexMessage(date) {
   var records = getFinalListByDate(date);
+  var settlement = getSettlementStatus(date);
   var male = [];
   var female = [];
   for (var i = 0; i < records.length; i += 1) {
@@ -885,7 +1026,15 @@ function buildFinalListFlexMessage(date) {
 
   var contents = [
     { type: 'text', text: date + ' 最終名單', weight: 'bold', size: 'xl', color: '#26342F' },
-    { type: 'text', text: '總人數 ' + records.length + ' / ' + TOTAL_LIMIT + '，女生 ' + female.length + ' / ' + FEMALE_LIMIT, size: 'sm', color: '#6F7D78', margin: 'sm' }
+    { type: 'text', text: '總人數 ' + records.length + ' / ' + TOTAL_LIMIT + '，女生 ' + female.length + ' / ' + '人' + '，男生 ' + male.length + ' / ' + '人', size: 'sm' , color: '#6F7D78', margin: 'sm' },
+    {
+      type: 'text',
+      text: '臨打費用：每人 ' + settlement.extraFee + ' 元' + (settlement.hasAirConditioning ? '（含冷氣）' : '（未開冷氣）'),
+      weight: 'bold',
+      size: 'sm',
+      color: '#A66A3F',
+      margin: 'sm'
+    }
   ];
   contents = contents.concat(buildFinalListSection('女生', female, '#D986A4'));
   contents = contents.concat(buildFinalListSection('男生', male, '#6C9DB5'));
@@ -940,6 +1089,7 @@ function buildWaitlistText(rows) {
 }
 
 function buildOpenSignupReplyMessage(date) {
+  var settlement = getSettlementStatus(date);
   return {
     type: 'flex',
     altText: date + ' 已開放報名',
@@ -952,6 +1102,13 @@ function buildOpenSignupReplyMessage(date) {
         contents: [
           { type: 'text', text: '已開放報名', weight: 'bold', size: 'xl', color: '#26342F' },
           { type: 'text', text: date + ' 已加入可選日期，固定名單也已建立。', wrap: true, size: 'sm', color: '#6F7D78' },
+          {
+            type: 'text',
+            text: '臨打費用：每人 ' + settlement.extraFee + ' 元' + (settlement.hasAirConditioning ? '（含冷氣）' : '（未開冷氣）'),
+            weight: 'bold',
+            size: 'sm',
+            color: '#A66A3F'
+          },
           {
             type: 'button',
             style: 'primary',
@@ -984,7 +1141,7 @@ function buildFinalListSection(title, rows, color) {
 
 function formatFinalListName(row) {
   var source = normalize(row && row.source);
-  var suffix = source.indexOf('額外報名') === 0 ? '（補上）' : '';
+  var suffix = source.indexOf('臨打報名') === 0 ? '（補上）' : '';
   return normalize(row && row.name) + suffix;
 }
 
@@ -1047,6 +1204,10 @@ function getBooleanScriptProperty(name, defaultValue) {
   if (['1', 'true', 'yes', 'y', 'on'].indexOf(value) >= 0) return true;
   if (['0', 'false', 'no', 'n', 'off'].indexOf(value) >= 0) return false;
   return !!defaultValue;
+}
+
+function isTruthyValue(value) {
+  return ['1', 'true', 'yes', 'y', 'on'].indexOf(normalize(value).toLowerCase()) >= 0;
 }
 
 function isUserEditAllowed() {
@@ -1125,7 +1286,11 @@ function getExtraSignupsByDate(date) {
       femaleName: normalize(rows[i][4]),
       note: normalize(rows[i][5]),
       pairMustTogether: normalize(rows[i][6]),
-      createdAt: normalize(rows[i][8])
+      createdAt: normalize(rows[i][8]),
+      isPaid: normalize(rows[i][12]) === '1',
+      paidAt: normalize(rows[i][13]),
+      paidByLineUserId: normalize(rows[i][14]),
+      paidByDisplayName: normalize(rows[i][15])
     });
   }
 
@@ -1170,17 +1335,37 @@ function countFemale(rows) {
 function getSettlementStatus(date) {
   var rowInfo = getSettlementRow(date, true);
   var row = rowInfo.row;
+  var hasAirConditioning = normalize(row[5]) === '1';
   return {
     date: date,
     settleAt: normalize(row[1]),
     settled: normalize(row[2]) === '1',
     settledAt: normalize(row[3]),
-    triggerNote: normalize(row[4])
+    triggerNote: normalize(row[4]),
+    hasAirConditioning: hasAirConditioning,
+    extraFee: hasAirConditioning ? 230 : 190
   };
 }
 
 function ensureSettlementRow(date) {
-  if (!getSettlementRow(date, false)) getSheet(SETTLE_SHEET).appendRow([date, '', '0', '', '']);
+  if (!getSettlementRow(date, false)) getSheet(SETTLE_SHEET).appendRow([date, '', '0', '', '', '0']);
+}
+
+function updateDateSettings(date, hasAirConditioningValue, lineIdentity) {
+  var enabled = isTruthyValue(hasAirConditioningValue);
+  var identity = lineIdentity || { userId: '', displayName: '' };
+  var info = getSettlementRow(date, true);
+  var now = nowIso();
+
+  info.sheet.getRange(info.index, 6).setValue(enabled ? '1' : '0');
+  getSheet(SETTLEMENT_LOGS_SHEET).appendRow([
+    date,
+    '場地設定',
+    enabled ? '開冷氣 / 臨打費用每人 230 元' : '不開冷氣 / 臨打費用每人 190 元',
+    now,
+    normalize(identity.userId),
+    normalize(identity.displayName)
+  ]);
 }
 
 function upsertAvailableDateFromBot(date) {
@@ -1247,9 +1432,9 @@ function getSettlementRow(date, createIfMissing) {
     if (normalize(rows[i][0]) === date) return { sheet: sheet, index: i + 1, row: rows[i] };
   }
   if (!createIfMissing) return null;
-  sheet.appendRow([date, '', '0', '', '']);
+  sheet.appendRow([date, '', '0', '', '', '0']);
   var idx = sheet.getLastRow();
-  return { sheet: sheet, index: idx, row: sheet.getRange(idx, 1, 1, 5).getDisplayValues()[0] };
+  return { sheet: sheet, index: idx, row: sheet.getRange(idx, 1, 1, 6).getDisplayValues()[0] };
 }
 
 function getAvailableDates() {
@@ -1299,11 +1484,29 @@ function bootstrapSheets() {
   ensureSheet(DATES_SHEET, ['date', 'label', 'enabled'], [[todayPlus(0), '本週一', '1'], [todayPlus(7), '下週一', '1']]);
   ensureSheet(MEMBERS_SHEET, ['memberId', 'memberName', 'gender', 'enabled'], [['M001', '王小明', '男', '1'], ['M002', '林小美', '女', '1']]);
   ensureSheet(LEAVE_SHEET, ['date', 'memberId', 'memberName', 'gender', 'status', 'createdAt', 'lineUserId', 'lineDisplayName']);
-  ensureSheet(EXTRA_SHEET, ['signupId', 'date', 'type', 'maleName', 'femaleName', 'note', 'pairMustTogether', 'isCanceled', 'createdAt', 'canceledAt', 'lineUserId', 'lineDisplayName']);
+  ensureSheet(EXTRA_SHEET, [
+    'signupId',
+    'date',
+    'type',
+    'maleName',
+    'femaleName',
+    'note',
+    'pairMustTogether',
+    'isCanceled',
+    'createdAt',
+    'canceledAt',
+    'lineUserId',
+    'lineDisplayName',
+    'isPaid',
+    'paidAt',
+    'paidByLineUserId',
+    'paidByDisplayName'
+  ]);
   ensureSheet(FINAL_SHEET, ['date', 'name', 'gender', 'source', 'signupId']);
-  ensureSheet(SETTLE_SHEET, ['date', 'settleAt(YYYY-MM-DD HH:mm)', 'settled(0/1)', 'settledAt', 'triggerNote']);
+  ensureSheet(SETTLE_SHEET, ['date', 'settleAt(YYYY-MM-DD HH:mm)', 'settled(0/1)', 'settledAt', 'triggerNote', 'hasAirConditioning(0/1)']);
   ensureSheet(SETTLEMENT_LOGS_SHEET, ['date', 'action', 'note', 'createdAt', 'lineUserId', 'lineDisplayName']);
-  ensureSheet(LINE_GROUPS_SHEET, ['sourceType', 'sourceId', 'lastUserId', 'lastSeenAt', 'note']);
+  ensureSheet(PAYMENT_LOGS_SHEET, ['date', 'signupId', 'action', 'createdAt', 'lineUserId', 'lineDisplayName']);
+  ensureSheet(LINE_GROUPS_SHEET, ['sourceType', 'sourceId', 'lastUserId', 'lastSeenAt', 'note', 'lastUserDisplayName']);
   ensureSheet(LINE_WEBHOOK_LOGS_SHEET, ['createdAt', 'sourceType', 'sourceId', 'userId', 'text', 'action', 'detail']);
 }
 

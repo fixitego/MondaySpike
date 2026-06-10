@@ -23,9 +23,25 @@
     <header class="hero">
       <a href="./index.html" class="back-link">← 回日期列表</a>
       <h1 id="pageTitle">日期報名</h1>
-      <p id="pageSubTitle">請假、額外報名與最終名單都在此頁操作。</p>
+      <p id="pageSubTitle">請假、臨打報名與最終名單都在此頁操作。</p>
       <p id="pageError" class="error-text" hidden></p>
     </header>
+
+    <section class="panel panel-media venue-settings">
+      <div class="row between stack-mobile">
+        <div>
+          <h2>場地與臨打費用</h2>
+          <p id="extraFeeInfo" class="note">臨打費用：每人 190 元（未開冷氣）</p>
+        </div>
+        <div class="venue-actions">
+          <label class="checkbox-line">
+            <input id="hasAirConditioning" type="checkbox" />
+            是否有開冷氣
+          </label>
+          <button id="saveVenueSettingsBtn" class="btn" type="button">儲存設定</button>
+        </div>
+      </div>
+    </section>
 
     <section class="panel panel-media panel-members">
       <h2>固定人員名單（請假）</h2>
@@ -43,7 +59,7 @@
     </section>
 
     <section class="panel panel-media panel-extra">
-      <h2>額外報名</h2>
+      <h2>臨打報名</h2>
       <form id="extraForm" class="form-grid">
         <label for="extraType">補位類型</label>
         <select id="extraType" required>
@@ -67,14 +83,14 @@
         <label for="extraNote">備註</label>
         <input id="extraNote" type="text" maxlength="120" placeholder="例如：候補、只能 20:00 後到場" />
 
-        <button id="extraSubmitBtn" class="btn primary" type="submit">送出額外報名</button>
+        <button id="extraSubmitBtn" class="btn primary" type="submit">送出臨打報名</button>
       </form>
     </section>
 
     <section class="panel panel-media panel-extra">
       <div class="row between">
-        <h2>額外報名清單</h2>
-        <button id="refreshExtraBtn" class="btn icon-btn" type="button" title="刷新額外報名">↻</button>
+        <h2>臨打報名清單</h2>
+        <button id="refreshExtraBtn" class="btn icon-btn" type="button" title="刷新臨打報名">↻</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -83,7 +99,9 @@
               <th>類型</th>
               <th>姓名</th>
               <th>狀態</th>
+              <th>收費</th>
               <th>備註</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody id="extraListBody"></tbody>
@@ -117,7 +135,7 @@
 
     <section class="panel panel-media panel-final">
       <details id="auditSection">
-        <summary>異動紀錄（請假 / 額外報名）</summary>
+        <summary>異動紀錄（請假 / 臨打報名）</summary>
         <div class="row between audit-head">
           <p class="note">預設收合，點開可檢視該日期的新增/取消時間。</p>
           <button id="refreshAuditBtn" class="btn icon-btn" type="button" title="刷新異動紀錄">↻</button>

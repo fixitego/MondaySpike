@@ -131,6 +131,7 @@ async function initDatePage() {
     bindExtraForm(date);
     bindRefreshButtons(date);
     bindSettlementButton(date);
+    bindVenueSettings(date);
     bindExtraTypeBehavior();
     applyDateLockToInputs();
 
@@ -252,7 +253,7 @@ function bindExtraForm(date) {
     if (extraType === "FEMALE" && !femaleName) return uiAlert("請輸入女生姓名");
     if (extraType === "PAIR" && (!maleName || !femaleName)) return uiAlert("一男一女都要填");
 
-    if (!(await uiConfirm("確認送出額外報名？"))) return;
+    if (!(await uiConfirm("確認送出臨打報名？"))) return;
 
     submitBtn.disabled = true;
     try {
@@ -263,7 +264,7 @@ function bindExtraForm(date) {
       bindExtraTypeBehavior();
       await loadPageData(date);
     } catch (error) {
-      uiAlert(`額外報名失敗：${error.message}`);
+      uiAlert(`臨打報名失敗：${error.message}`);
     } finally {
       submitBtn.disabled = false;
     }
@@ -309,10 +310,11 @@ function bindSettlementButton(date) {
 
   btn.addEventListener("click", async () => {
     const token = await uiPrompt("請輸入結算觸發碼。管理員 LINE 帳號可留空直接送出。");
+    if (token === null) return;
     if (!token) await ensureLiffIdentityReady(true);
     else await ensureLiffIdentityReady(false);
     if (!token && !state.lineIdToken) return uiAlert(`無法以管理員身分觸發結算。${buildLiffStatusText()}`);
-    if (!(await uiConfirm("確定現在要觸發結算嗎？觸發後會開始用額外報名補位。"))) return;
+    if (!(await uiConfirm("確定現在要觸發結算嗎？觸發後會開始用臨打報名補位。"))) return;
 
     btn.disabled = true;
     try {
@@ -336,6 +338,54 @@ function renderSettlementStatus(settlement) {
   document.getElementById("settlementInfo").textContent = s.settled
     ? `結算狀態：已結算（${s.settledAt || ""}）`
     : `結算狀態：未結算；排程時間：${s.settleAt || "未設定"}`;
+
+  const airConditioning = document.getElementById("hasAirConditioning");
+  const feeInfo = document.getElementById("extraFeeInfo");
+  if (airConditioning) airConditioning.checked = !!s.hasAirConditioning;
+  if (feeInfo) {
+    const fee = Number(s.extraFee) || (s.hasAirConditioning ? 230 : 190);
+    feeInfo.textContent = `臨打費用：每人 ${fee} 元（${s.hasAirConditioning ? "含冷氣" : "未開冷氣"}）`;
+  }
+}
+
+function bindVenueSettings(date) {
+  const checkbox = document.getElementById("hasAirConditioning");
+  const button = document.getElementById("saveVenueSettingsBtn");
+  if (!checkbox || !button) return;
+
+  if (!canEditCurrentDate()) {
+    checkbox.disabled = true;
+    button.disabled = true;
+    return;
+  }
+
+  button.addEventListener("click", async () => {
+    const token = await uiPrompt("請輸入管理員觸發碼。管理員 LINE 帳號可留空直接儲存。");
+    if (token === null) return;
+    if (!token) await ensureLiffIdentityReady(true);
+    else await ensureLiffIdentityReady(false);
+    if (!token && !state.lineIdToken) return uiAlert(`無法確認管理員身分。${buildLiffStatusText()}`);
+
+    const hasAirConditioning = checkbox.checked ? "1" : "0";
+    const fee = checkbox.checked ? 230 : 190;
+    if (!(await uiConfirm(`確定儲存場地設定？\n臨打費用將顯示為每人 ${fee} 元。`))) return;
+
+    button.disabled = true;
+    try {
+      const data = await callApi(withLineIdentity({
+        action: "update_date_settings",
+        date,
+        hasAirConditioning,
+        token
+      }));
+      renderSettlementStatus(data.settlement);
+      await loadAuditLogs(date);
+    } catch (error) {
+      uiAlert(`場地設定儲存失敗：${error.message}`);
+    } finally {
+      button.disabled = false;
+    }
+  });
 }
 
 async function loadPageData(date) {
@@ -397,13 +447,13 @@ function renderAuditLogs(records) {
 
 async function loadExtraList(date) {
   const body = document.getElementById("extraListBody");
-  body.innerHTML = `<tr><td colspan="4">載入中...</td></tr>`;
+  body.innerHTML = `<tr><td colspan="6">載入中...</td></tr>`;
 
   try {
     const data = await callApi({ action: "extra_list", date });
     renderExtraList(date, data.records);
   } catch (error) {
-    body.innerHTML = `<tr><td colspan="4">載入失敗：${escapeHtml(error.message)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6">載入失敗：${escapeHtml(error.message)}</td></tr>`;
   }
 }
 
@@ -411,7 +461,7 @@ function renderExtraList(date, records) {
   const body = document.getElementById("extraListBody");
   const rows = Array.isArray(records) ? records : [];
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="4">目前沒有資料</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6">目前沒有資料</td></tr>`;
     return;
   }
 
@@ -419,6 +469,11 @@ function renderExtraList(date, records) {
     const who = r.type === "MALE" ? r.maleName : r.type === "FEMALE" ? r.femaleName : `${r.maleName} + ${r.femaleName}`;
     const label = r.type === "MALE" ? "男" : r.type === "FEMALE" ? "女" : "一男一女";
     const rule = r.type === "PAIR" ? (r.pairMustTogether === "1" ? "（同進同退）" : "（可拆）") : "";
+    const paid = r.isPaid === true || r.isPaid === "1";
+    const paymentLabel = paid ? "已收費" : "未收費";
+    const paymentButton = canEditCurrentDate()
+      ? `<button class="btn mini" data-payment-signup="${escapeHtml(r.signupId)}" data-paid="${paid ? "1" : "0"}">${paid ? "取消已收費" : "標記已收費"}</button>`
+      : "";
     const cancelBtn = canEditCurrentDate()
       ? `<button class="btn mini danger" data-cancel-signup="${escapeHtml(r.signupId)}">取消</button>`
       : "";
@@ -427,16 +482,48 @@ function renderExtraList(date, records) {
       <td>${label}${rule}</td>
       <td>${escapeHtml(who)}</td>
       <td>${escapeHtml(r.status || "候補")}</td>
-      <td>${escapeHtml(r.note || "")} ${cancelBtn}</td>
+      <td><span class="payment-status ${paid ? "paid" : "unpaid"}">${paymentLabel}</span></td>
+      <td>${escapeHtml(r.note || "")}</td>
+      <td>${paymentButton} ${cancelBtn}</td>
     </tr>`;
   }).join("");
 
   if (canEditCurrentDate()) {
+    body.querySelectorAll("[data-payment-signup]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const signupId = btn.getAttribute("data-payment-signup");
+        const currentlyPaid = btn.getAttribute("data-paid") === "1";
+        if (!signupId) return;
+
+        const token = await uiPrompt("請輸入管理員觸發碼。管理員 LINE 帳號可留空直接操作。");
+        if (token === null) return;
+        if (!token) await ensureLiffIdentityReady(true);
+        else await ensureLiffIdentityReady(false);
+        if (!token && !state.lineIdToken) return uiAlert(`無法確認管理員身分。${buildLiffStatusText()}`);
+        if (!(await uiConfirm(currentlyPaid ? "確定取消這筆已收費標記？" : "確定將這筆臨打標記為已收費？"))) return;
+
+        btn.disabled = true;
+        try {
+          await callApi(withLineIdentity({
+            action: "update_extra_payment",
+            date,
+            signupId,
+            isPaid: currentlyPaid ? "0" : "1",
+            token
+          }));
+          await loadPageData(date);
+        } catch (error) {
+          uiAlert(`收費狀態更新失敗：${error.message}`);
+          btn.disabled = false;
+        }
+      });
+    });
+
     body.querySelectorAll("[data-cancel-signup]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const signupId = btn.getAttribute("data-cancel-signup");
         if (!signupId) return;
-        if (!(await uiConfirm("確定要取消這筆額外報名嗎？"))) return;
+        if (!(await uiConfirm("確定要取消這筆臨打報名嗎？"))) return;
         btn.disabled = true;
         try {
           await callApi({ action: "cancel_extra_signup", date, signupId });
@@ -545,7 +632,16 @@ function canEditCurrentDate() {
 
 function applyDateLockToInputs() {
   if (!state.isDateLocked) return;
-  const ids = ["extraType", "maleName", "femaleName", "pairMustTogether", "extraNote", "extraSubmitBtn"];
+  const ids = [
+    "extraType",
+    "maleName",
+    "femaleName",
+    "pairMustTogether",
+    "extraNote",
+    "extraSubmitBtn",
+    "hasAirConditioning",
+    "saveVenueSettingsBtn"
+  ];
   ids.forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.disabled = true;
@@ -658,17 +754,17 @@ async function mockApi(params) {
       });
       for (const ex of extras) {
         if (fixed.length >= 18) break;
-        if (ex.type === "MALE") fixed.push({ name: ex.maleName, gender: "男", source: "額外報名" });
-        if (ex.type === "FEMALE") fixed.push({ name: ex.femaleName, gender: "女", source: "額外報名" });
+        if (ex.type === "MALE") fixed.push({ name: ex.maleName, gender: "男", source: "臨打報名" });
+        if (ex.type === "FEMALE") fixed.push({ name: ex.femaleName, gender: "女", source: "臨打報名" });
         if (ex.type === "PAIR") {
           if (ex.pairMustTogether === "1") {
             if (fixed.length <= 16) {
-              fixed.push({ name: ex.maleName, gender: "男", source: "額外報名(配對)" });
-              fixed.push({ name: ex.femaleName, gender: "女", source: "額外報名(配對)" });
+              fixed.push({ name: ex.maleName, gender: "男", source: "臨打報名(配對)" });
+              fixed.push({ name: ex.femaleName, gender: "女", source: "臨打報名(配對)" });
             }
           } else {
-            fixed.push({ name: ex.femaleName, gender: "女", source: "額外報名(配對-女)" });
-            if (fixed.length < 18) fixed.push({ name: ex.maleName, gender: "男", source: "額外報名(配對-男)" });
+            fixed.push({ name: ex.femaleName, gender: "女", source: "臨打報名(配對-女)" });
+            if (fixed.length < 18) fixed.push({ name: ex.maleName, gender: "男", source: "臨打報名(配對-男)" });
           }
         }
       }
@@ -693,6 +789,14 @@ async function mockApi(params) {
     return { ok: true, settlement: getMockSettlement(date) };
   }
 
+  if (params.action === "update_date_settings") {
+    const item = getMockSettlement(date);
+    item.hasAirConditioning = String(params.hasAirConditioning || "") === "1";
+    item.extraFee = item.hasAirConditioning ? 230 : 190;
+    localStorage.setItem(mockKey("settle", date), JSON.stringify(item));
+    return { ok: true, settlement: item };
+  }
+
   if (params.action === "leave") {
     addMockLeave(date, String(params.memberId || ""));
     return { ok: true };
@@ -712,6 +816,11 @@ async function mockApi(params) {
 
   if (params.action === "cancel_extra_signup") {
     cancelMockExtra(String(params.signupId || ""));
+    return { ok: true };
+  }
+
+  if (params.action === "update_extra_payment") {
+    updateMockExtraPayment(String(params.signupId || ""), String(params.isPaid || "") === "1");
     return { ok: true };
   }
 
@@ -795,7 +904,9 @@ function addMockExtra(payload) {
     maleName: payload.maleName,
     femaleName: payload.femaleName,
     note: payload.note,
-    pairMustTogether: payload.pairMustTogether
+    pairMustTogether: payload.pairMustTogether,
+    isPaid: false,
+    paidAt: ""
   });
   localStorage.setItem(mockKey("extras", payload.date), JSON.stringify(list));
 }
@@ -809,8 +920,25 @@ function cancelMockExtra(signupId) {
   });
 }
 
+function updateMockExtraPayment(signupId, isPaid) {
+  if (!signupId) return;
+  const keys = Object.keys(localStorage).filter((k) => k.startsWith("mock:extras:"));
+  keys.forEach((k) => {
+    const rows = JSON.parse(localStorage.getItem(k) || "[]");
+    rows.forEach((row) => {
+      if (row.signupId !== signupId) return;
+      row.isPaid = !!isPaid;
+      row.paidAt = isPaid ? new Date().toISOString().slice(0, 19).replace("T", " ") : "";
+    });
+    localStorage.setItem(k, JSON.stringify(rows));
+  });
+}
+
 function getMockSettlement(date) {
-  return JSON.parse(localStorage.getItem(mockKey("settle", date)) || "{\"settled\":false,\"settleAt\":\"2026-05-25 20:30\",\"settledAt\":\"\"}");
+  const item = JSON.parse(localStorage.getItem(mockKey("settle", date)) || "{\"settled\":false,\"settleAt\":\"2026-05-25 20:30\",\"settledAt\":\"\",\"hasAirConditioning\":false,\"extraFee\":190}");
+  item.hasAirConditioning = !!item.hasAirConditioning;
+  item.extraFee = item.hasAirConditioning ? 230 : 190;
+  return item;
 }
 
 function setMockSettlement(date, settled) {
@@ -1181,7 +1309,7 @@ function uiPrompt(message) {
     };
     const onCancel = () => {
       cleanup();
-      resolve("");
+      resolve(null);
     };
     ok.addEventListener("click", onOk);
     cancel.addEventListener("click", onCancel);
