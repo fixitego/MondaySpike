@@ -85,7 +85,14 @@ function renderIndexDateControls() {
   }
 
   dateList.innerHTML = state.availableDates.map((item) =>
-    `<button class="date-card" type="button" data-date="${item.date}"><span>${escapeHtml(item.label)}</span><small>${escapeHtml(item.date)}</small></button>`
+    {
+      const expired = isDatePast(item.date, state.policy.today);
+      return `<button class="date-card${expired ? " expired" : ""}" type="button" data-date="${item.date}">
+        <span>${escapeHtml(item.label)}</span>
+        <small>${escapeHtml(item.date)}</small>
+        <b class="date-state">${expired ? "已過期" : "開放中"}</b>
+      </button>`;
+    }
   ).join("");
 
   dateList.onclick = (event) => {
@@ -100,7 +107,7 @@ function renderIndexDateControls() {
   };
 
   customDateSelect.innerHTML = state.availableDates.map((item) =>
-    `<option value="${item.date}">${escapeHtml(item.label)} (${escapeHtml(item.date)})</option>`).join("");
+    `<option value="${item.date}">${escapeHtml(item.label)} (${escapeHtml(item.date)})${isDatePast(item.date, state.policy.today) ? " - 已過期" : ""}</option>`).join("");
   customDateSelect.disabled = false;
   document.getElementById("goDateBtn").disabled = false;
 }
@@ -183,6 +190,7 @@ function renderFixedMembers(date) {
 
       button.disabled = true;
       button.textContent = "送出中...";
+      showGlobalLoading(`正在送出 ${member.name} 的請假資料...`);
       try {
         await ensureLiffIdentityReady(true);
         await callApi(withLineIdentity({ action: "leave", date, memberId: member.id, memberName: member.name, gender: member.gender }));
@@ -193,6 +201,8 @@ function renderFixedMembers(date) {
         button.disabled = false;
         button.textContent = "請假";
         uiAlert(`請假送出失敗：${error.message}`);
+      } finally {
+        hideGlobalLoading();
       }
     });
   });
@@ -270,6 +280,7 @@ function bindExtraForm(date) {
     if (!(await uiConfirm("確認送出臨打報名？"))) return;
 
     submitBtn.disabled = true;
+    showGlobalLoading("正在送出臨打報名...");
     try {
       await ensureLiffIdentityReady(true);
       await callApi(withLineIdentity({ action: "extra_signup", date, extraType, maleName, femaleName, note, pairMustTogether }));
@@ -281,6 +292,7 @@ function bindExtraForm(date) {
       uiAlert(`臨打報名失敗：${error.message}`);
     } finally {
       submitBtn.disabled = false;
+      hideGlobalLoading();
     }
   });
 }
@@ -338,6 +350,7 @@ function bindSettlementButton(date) {
     if (!(await uiConfirm("確定現在要觸發結算嗎？觸發後會開始用臨打報名臨打。"))) return;
 
     btn.disabled = true;
+    showGlobalLoading("正在更新結算名單...");
     try {
       await callApi(withLineIdentity({ action: "trigger_settlement", date, token }));
       await loadPageData(date);
@@ -345,6 +358,7 @@ function bindSettlementButton(date) {
       uiAlert(`觸發結算失敗：${error.message}`);
     } finally {
       btn.disabled = false;
+      hideGlobalLoading();
     }
   });
 }
@@ -392,6 +406,7 @@ function bindVenueSettings(date) {
     if (!(await uiConfirm(`確定儲存場地設定？\n臨打費用將顯示為每人 ${fee} 元。`))) return;
 
     button.disabled = true;
+    showGlobalLoading("正在儲存場地與費用設定...");
     try {
       const data = await callApi(withLineIdentity({
         action: "update_date_settings",
@@ -405,6 +420,7 @@ function bindVenueSettings(date) {
       uiAlert(`場地設定儲存失敗：${error.message}`);
     } finally {
       button.disabled = false;
+      hideGlobalLoading();
     }
   });
 }
@@ -466,8 +482,10 @@ function renderFinalList(records) {
 function updateDashboardRosterMetrics(rows) {
   const list = Array.isArray(rows) ? rows : [];
   const total = document.getElementById("dashboardTotal");
+  const male = document.getElementById("dashboardMale");
   const female = document.getElementById("dashboardFemale");
   if (total) total.textContent = String(list.length);
+  if (male) male.textContent = String(list.filter((row) => row.gender === "男").length);
   if (female) female.textContent = String(list.filter((row) => row.gender === "女").length);
 }
 
@@ -540,6 +558,7 @@ function renderExtraList(date, records) {
       if (!(await uiConfirm(currentlyPaid ? "確定取消這筆已收費標記？" : "確定將這筆臨打標記為已收費？"))) return;
 
       btn.disabled = true;
+      showGlobalLoading(currentlyPaid ? "正在取消收費標記..." : "正在標記已收費...");
       try {
         await callApi(withLineIdentity({
           action: "update_extra_payment",
@@ -551,7 +570,9 @@ function renderExtraList(date, records) {
         await loadPageData(date);
       } catch (error) {
         uiAlert(`收費狀態更新失敗：${error.message}`);
+      } finally {
         btn.disabled = false;
+        hideGlobalLoading();
       }
     });
   });
@@ -563,12 +584,15 @@ function renderExtraList(date, records) {
         if (!signupId) return;
         if (!(await uiConfirm("確定要取消這筆臨打報名嗎？"))) return;
         btn.disabled = true;
+        showGlobalLoading("正在取消臨打報名...");
         try {
           await callApi({ action: "cancel_extra_signup", date, signupId });
           await loadPageData(date);
         } catch (error) {
           uiAlert(`取消失敗：${error.message}`);
+        } finally {
           btn.disabled = false;
+          hideGlobalLoading();
         }
       });
     });
@@ -578,9 +602,13 @@ function renderExtraList(date, records) {
 function updateDashboardExtraMetrics(rows) {
   const list = Array.isArray(rows) ? rows : [];
   const waitlist = document.getElementById("dashboardWaitlist");
+  const filled = document.getElementById("dashboardFilled");
   const paid = document.getElementById("dashboardPaid");
   if (waitlist) {
     waitlist.textContent = String(list.filter((row) => String(row.status || "") !== "已補上").length);
+  }
+  if (filled) {
+    filled.textContent = String(list.filter((row) => String(row.status || "") === "已補上").length);
   }
   if (paid) {
     paid.textContent = String(list.filter((row) => row.isPaid === true || row.isPaid === "1").length);
@@ -1235,6 +1263,8 @@ function showGlobalLoading(message) {
 function applyLeaveState(leaveMemberIds) {
   const ids = Array.isArray(leaveMemberIds) ? leaveMemberIds : [];
   state.leaveMemberIds = new Set(ids.map((id) => String(id || "").trim()).filter(Boolean));
+  const leave = document.getElementById("dashboardLeave");
+  if (leave) leave.textContent = String(state.leaveMemberIds.size);
 }
 
 function hideGlobalLoading() {
