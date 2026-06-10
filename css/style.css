@@ -254,6 +254,11 @@ select:focus {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  max-width: 100%;
   border: 1px solid #c8dad1;
   border-radius: 8px;
   padding: 9px 12px;
@@ -262,6 +267,9 @@ select:focus {
   cursor: pointer;
   font-size: 0.86rem;
   font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
   box-shadow: 0 5px 14px rgba(78, 128, 105, 0.12);
   transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
 }
@@ -377,8 +385,8 @@ select:focus {
   filter: grayscale(.12);
 }
 
-.member-left { display: flex; flex-direction: column; gap: 1px; }
-.member-name { font-weight: 800; font-size: 0.83rem; }
+.member-left { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.member-name { font-weight: 800; font-size: 0.83rem; overflow-wrap: anywhere; }
 .member-meta { color: #7b8a84; font-size: 0.68rem; }
 .member-status { color: #6f7f77; font-size: 0.68rem; }
 
@@ -406,6 +414,23 @@ select:focus {
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.panel-actions,
+.table-action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.panel-actions {
+  justify-content: flex-end;
+}
+
+.table-action-group {
+  min-width: max-content;
+  justify-content: flex-start;
 }
 
 .payment-status {
@@ -617,7 +642,12 @@ tr.gender-female td { background: rgba(253, 242, 247, 0.82); }
 }
 
 #uiModalInput { margin-bottom: 10px; }
-.ui-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ui-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
 #auditSection summary {
   cursor: pointer;
@@ -652,10 +682,23 @@ tr.gender-female td { background: rgba(253, 242, 247, 0.82); }
 @media (max-width: 760px) {
   .container { width: min(94vw, 620px); }
   .split-two { grid-template-columns: 1fr; }
-  .row.between { align-items: flex-start; gap: 10px; }
+  .row.between {
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
   .hero-inner { min-height: 218px; }
   .hero-track,
   .hero-track img { height: 136px; }
   .site-footer { flex-direction: column; }
   .venue-actions { justify-content: flex-start; }
+  .panel-actions { justify-content: flex-start; }
+  .page-date .btn:not(.icon-btn) {
+    padding: 7px 10px;
+    font-size: .8rem;
+  }
+  .page-date .btn.mini {
+    padding: 5px 7px;
+    font-size: .7rem;
+  }
 }

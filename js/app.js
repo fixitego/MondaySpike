@@ -279,9 +279,16 @@ function bindRefreshButtons(date) {
   finalBtn.addEventListener("click", async () => {
     finalBtn.classList.add("is-loading");
     finalBtn.disabled = true;
-    await Promise.all([loadFinalList(date), loadSettlementStatus(date)]);
-    finalBtn.disabled = false;
-    finalBtn.classList.remove("is-loading");
+    try {
+      // final_list may trigger a scheduled settlement, so read its status afterwards.
+      await loadFinalList(date);
+      await loadSettlementStatus(date);
+    } catch (error) {
+      uiAlert(`刷新最終名單失敗：${error.message}`);
+    } finally {
+      finalBtn.disabled = false;
+      finalBtn.classList.remove("is-loading");
+    }
   });
 
   extraBtn.addEventListener("click", async () => {
@@ -314,7 +321,7 @@ function bindSettlementButton(date) {
     if (!token) await ensureLiffIdentityReady(true);
     else await ensureLiffIdentityReady(false);
     if (!token && !state.lineIdToken) return uiAlert(`無法以管理員身分觸發結算。${buildLiffStatusText()}`);
-    if (!(await uiConfirm("確定現在要觸發結算嗎？觸發後會開始用臨打報名補位。"))) return;
+    if (!(await uiConfirm("確定現在要觸發結算嗎？觸發後會開始用臨打報名臨打。"))) return;
 
     btn.disabled = true;
     try {
@@ -484,7 +491,7 @@ function renderExtraList(date, records) {
       <td>${escapeHtml(r.status || "候補")}</td>
       <td><span class="payment-status ${paid ? "paid" : "unpaid"}">${paymentLabel}</span></td>
       <td>${escapeHtml(r.note || "")}</td>
-      <td>${paymentButton} ${cancelBtn}</td>
+      <td><div class="table-action-group">${paymentButton}${cancelBtn}</div></td>
     </tr>`;
   }).join("");
 
