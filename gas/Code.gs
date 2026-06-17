@@ -572,8 +572,6 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
     }
 
     if (r.type === 'PAIR') {
-      var canMale = total + 1 <= TOTAL_LIMIT;
-      var canFemale = total + 1 <= TOTAL_LIMIT && females + 1 <= FEMALE_LIMIT;
       var mustTogether = r.pairMustTogether === '1';
       var pairMaleAdded = false;
       var pairFemaleAdded = false;
@@ -590,16 +588,16 @@ function applyExtraFillLogic(date, currentList, records, statusBySignupId) {
           usedSignupIds[r.signupId] = { count: 2, male: true, female: true };
         }
       } else {
-        if (!used.male && canMale) {
-          result.push([date, r.maleName, '男', '臨打報名(綁定-男)', r.signupId]);
-          total += 1;
-          pairMaleAdded = true;
-        }
-        if (!used.female && canFemale && total < TOTAL_LIMIT) {
+        if (!used.female && total + 1 <= TOTAL_LIMIT && females + 1 <= FEMALE_LIMIT) {
           result.push([date, r.femaleName, '女', '臨打報名(綁定-女)', r.signupId]);
           total += 1;
           females += 1;
           pairFemaleAdded = true;
+        }
+        if (!used.male && total + 1 <= TOTAL_LIMIT) {
+          result.push([date, r.maleName, '男', '臨打報名(綁定-男)', r.signupId]);
+          total += 1;
+          pairMaleAdded = true;
         }
         if (pairMaleAdded || pairFemaleAdded) {
           usedSignupIds[r.signupId] = {
