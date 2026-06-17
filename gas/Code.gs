@@ -28,6 +28,8 @@ const ADMIN_LINE_USER_IDS_PROPERTY = 'ADMIN_LINE_USER_IDS';
 const BACKUP_FOLDER_ID_PROPERTY = 'BACKUP_FOLDER_ID';
 const BACKUP_RETENTION_DAYS_PROPERTY = 'BACKUP_RETENTION_DAYS';
 const BACKUP_FILE_PREFIX = 'MondaySpike_Backup_';
+const CONTROL_CONFIG_CACHE_KEY = 'CONTROL_CONFIG_V1';
+const CONTROL_CONFIG_CACHE_SECONDS = 600;
 
 function doGet(e) {
   try {
@@ -36,7 +38,7 @@ function doGet(e) {
     if (!action) return jsonOutput({ ok: false, message: 'missing action' });
 
     if (action === 'config') {
-      return jsonOutput(getConfigResponse());
+      return jsonOutput(getCachedConfigResponse());
     }
 
     if (action === 'statistics') {
@@ -65,36 +67,44 @@ function doGet(e) {
     }
 
     if (action === 'leave') {
-      assertEditableDate(normalize(e.parameter.date));
-      saveLeave(e.parameter);
-      rebuildFinalListForDate(normalize(e.parameter.date));
-      return jsonOutput({ ok: true });
+      return jsonOutput(withDataMutationLock(function () {
+        assertEditableDate(normalize(e.parameter.date));
+        saveLeave(e.parameter);
+        rebuildFinalListForDate(normalize(e.parameter.date));
+        return { ok: true };
+      }));
     }
 
     if (action === 'extra_signup') {
-      assertEditableDate(normalize(e.parameter.date));
-      saveExtraSignup(e.parameter);
-      rebuildFinalListForDate(normalize(e.parameter.date));
-      return jsonOutput({ ok: true });
+      return jsonOutput(withDataMutationLock(function () {
+        assertEditableDate(normalize(e.parameter.date));
+        saveExtraSignup(e.parameter);
+        rebuildFinalListForDate(normalize(e.parameter.date));
+        return { ok: true };
+      }));
     }
 
     if (action === 'cancel_extra_signup') {
-      assertEditableDate(normalize(e.parameter.date));
-      cancelExtraSignup(normalize(e.parameter.signupId));
-      const date = normalize(e.parameter.date);
-      if (date) rebuildFinalListForDate(date);
-      return jsonOutput({ ok: true });
+      return jsonOutput(withDataMutationLock(function () {
+        assertEditableDate(normalize(e.parameter.date));
+        cancelExtraSignup(normalize(e.parameter.signupId));
+        const date = normalize(e.parameter.date);
+        if (date) rebuildFinalListForDate(date);
+        return { ok: true };
+      }));
     }
 
     if (action === 'update_extra_payment') {
-      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
-      updateExtraPayment(
-        normalize(e.parameter.signupId),
-        normalize(e.parameter.date),
-        normalize(e.parameter.isPaid),
-        getLineIdentityForRecord(e.parameter)
-      );
-      return jsonOutput({ ok: true });
+      return jsonOutput(withDataMutationLock(function () {
+        requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
+        updateExtraPayment(
+          normalize(e.parameter.signupId),
+          normalize(e.parameter.date),
+          normalize(e.parameter.isPaid),
+          getLineIdentityForRecord(e.parameter)
+        );
+        return { ok: true };
+      }));
     }
 
     if (action === 'extra_list') {
@@ -116,22 +126,26 @@ function doGet(e) {
     }
 
     if (action === 'update_date_settings') {
-      assertEditableDate(normalize(e.parameter.date));
-      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
-      const date = normalize(e.parameter.date);
-      validateDateIsAvailable(date);
-      updateDateSettings(date, normalize(e.parameter.hasAirConditioning), getLineIdentityForRecord(e.parameter));
-      return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
+      return jsonOutput(withDataMutationLock(function () {
+        assertEditableDate(normalize(e.parameter.date));
+        requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
+        const date = normalize(e.parameter.date);
+        validateDateIsAvailable(date);
+        updateDateSettings(date, normalize(e.parameter.hasAirConditioning), getLineIdentityForRecord(e.parameter));
+        return { ok: true, settlement: getSettlementStatus(date) };
+      }));
     }
 
     if (action === 'trigger_settlement') {
-      assertEditableDate(normalize(e.parameter.date));
-      requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
-      const date = normalize(e.parameter.date);
-      validateDateIsAvailable(date);
-      triggerSettlement(date, 'manual_api_trigger', getLineIdentityForRecord(e.parameter));
-      rebuildFinalListForDate(date);
-      return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
+      return jsonOutput(withDataMutationLock(function () {
+        assertEditableDate(normalize(e.parameter.date));
+        requireSettlementPermission(normalize(e.parameter.token), normalize(e.parameter.lineIdToken), normalize(e.parameter.lineUserId));
+        const date = normalize(e.parameter.date);
+        validateDateIsAvailable(date);
+        triggerSettlement(date, 'manual_api_trigger', getLineIdentityForRecord(e.parameter));
+        rebuildFinalListForDate(date);
+        return { ok: true, settlement: getSettlementStatus(date) };
+      }));
     }
 
     if (action === 'push_final_list') {
@@ -161,55 +175,67 @@ function doPost(e) {
     const action = normalize(payload.action);
 
     if (action === 'leave') {
-      assertEditableDate(normalize(payload.date));
-      saveLeave(payload);
-      rebuildFinalListForDate(normalize(payload.date));
-      return jsonOutput({ ok: true });
+      return jsonOutput(withDataMutationLock(function () {
+        assertEditableDate(normalize(payload.date));
+        saveLeave(payload);
+        rebuildFinalListForDate(normalize(payload.date));
+        return { ok: true };
+      }));
     }
 
     if (action === 'extra_signup') {
-      assertEditableDate(normalize(payload.date));
-      saveExtraSignup(payload);
-      rebuildFinalListForDate(normalize(payload.date));
-      return jsonOutput({ ok: true });
+      return jsonOutput(withDataMutationLock(function () {
+        assertEditableDate(normalize(payload.date));
+        saveExtraSignup(payload);
+        rebuildFinalListForDate(normalize(payload.date));
+        return { ok: true };
+      }));
     }
 
     if (action === 'cancel_extra_signup') {
-      assertEditableDate(normalize(payload.date));
-      cancelExtraSignup(normalize(payload.signupId));
-      const date = normalize(payload.date);
-      if (date) rebuildFinalListForDate(date);
-      return jsonOutput({ ok: true });
+      return jsonOutput(withDataMutationLock(function () {
+        assertEditableDate(normalize(payload.date));
+        cancelExtraSignup(normalize(payload.signupId));
+        const date = normalize(payload.date);
+        if (date) rebuildFinalListForDate(date);
+        return { ok: true };
+      }));
     }
 
     if (action === 'update_extra_payment') {
-      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
-      updateExtraPayment(
-        normalize(payload.signupId),
-        normalize(payload.date),
-        normalize(payload.isPaid),
-        getLineIdentityForRecord(payload)
-      );
-      return jsonOutput({ ok: true });
+      return jsonOutput(withDataMutationLock(function () {
+        requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
+        updateExtraPayment(
+          normalize(payload.signupId),
+          normalize(payload.date),
+          normalize(payload.isPaid),
+          getLineIdentityForRecord(payload)
+        );
+        return { ok: true };
+      }));
     }
 
     if (action === 'trigger_settlement') {
-      assertEditableDate(normalize(payload.date));
-      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
-      const date = normalize(payload.date);
-      validateDateIsAvailable(date);
-      triggerSettlement(date, 'manual_post_trigger', getLineIdentityForRecord(payload));
-      rebuildFinalListForDate(date);
-      return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
+      return jsonOutput(withDataMutationLock(function () {
+        assertEditableDate(normalize(payload.date));
+        requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
+        const date = normalize(payload.date);
+        validateDateIsAvailable(date);
+        triggerSettlement(date, 'manual_post_trigger', getLineIdentityForRecord(payload));
+        rebuildFinalListForDate(date);
+        return { ok: true, settlement: getSettlementStatus(date) };
+      }));
     }
 
     if (action === 'update_date_settings') {
-      assertEditableDate(normalize(payload.date));
-      requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
-      const date = normalize(payload.date);
-      validateDateIsAvailable(date);
-      updateDateSettings(date, normalize(payload.hasAirConditioning), getLineIdentityForRecord(payload));
-      return jsonOutput({ ok: true, settlement: getSettlementStatus(date) });
+      return jsonOutput(withDataMutationLock(function () {
+        assertEditableDate(normalize(payload.date));
+        requireSettlementPermission(normalize(payload.token), normalize(payload.lineIdToken), normalize(payload.lineUserId));
+        const date = normalize(payload.date);
+        validateDateIsAvailable(date);
+        updateDateSettings(date, normalize(payload.hasAirConditioning), getLineIdentityForRecord(payload));
+        return { ok: true, settlement: getSettlementStatus(date) };
+      }));
     }
 
     if (action === 'push_final_list') {
@@ -243,6 +269,49 @@ function getConfigResponse() {
       today: todayDateStr()
     }
   };
+}
+
+function getCachedConfigResponse() {
+  var cache = CacheService.getScriptCache();
+  try {
+    var cached = cache.get(CONTROL_CONFIG_CACHE_KEY);
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (err) {
+        cache.remove(CONTROL_CONFIG_CACHE_KEY);
+      }
+    }
+  } catch (cacheReadError) {
+    console.warn('Config cache read failed: ' + cacheReadError);
+  }
+
+  var response = getConfigResponse();
+  try {
+    cache.put(CONTROL_CONFIG_CACHE_KEY, JSON.stringify(response), CONTROL_CONFIG_CACHE_SECONDS);
+  } catch (cacheWriteError) {
+    console.warn('Config cache write failed: ' + cacheWriteError);
+  }
+  return response;
+}
+
+function clearControlConfigCache() {
+  try {
+    CacheService.getScriptCache().remove(CONTROL_CONFIG_CACHE_KEY);
+  } catch (cacheError) {
+    console.warn('Config cache clear failed: ' + cacheError);
+  }
+}
+
+function withDataMutationLock(callback) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('目前資料正在更新，請稍後再試');
+
+  try {
+    return callback();
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function assertEditableDate(date) {
@@ -1458,6 +1527,7 @@ function upsertAvailableDateFromBot(date) {
       sheet.getRange(i + 1, 3).setValue('1');
       ensureSettlementRow(date);
       rebuildFinalListForDate(date);
+      clearControlConfigCache();
       return;
     }
   }
@@ -1465,6 +1535,7 @@ function upsertAvailableDateFromBot(date) {
   sheet.appendRow([date, label, '1']);
   ensureSettlementRow(date);
   rebuildFinalListForDate(date);
+  clearControlConfigCache();
 }
 
 function buildDateLabel(date) {

@@ -7,6 +7,8 @@
 };
 
 const LINE_IDENTITY_CACHE_KEY = "mondaySpike:lineIdentity";
+const CONTROL_CONFIG_CACHE_KEY = "mondaySpike:controlConfig";
+const CONTROL_CONFIG_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const state = {
   availableDates: [],
@@ -65,7 +67,15 @@ async function initIndexPage() {
 
   try {
     showGlobalLoading();
-    await ensureLiffIdentityReady(false);
+    const hasCachedConfig = loadCachedControlConfig();
+    if (hasCachedConfig) {
+      renderIndexDateControls();
+      renderHomeMeta();
+    }
+    ensureLiffIdentityReady(false)
+      .then(renderHomeMeta)
+      .catch((error) => console.warn("LIFF identity background init failed:", error));
+
     await loadControlConfig(false);
     renderIndexDateControls();
     renderHomeMeta();
@@ -210,6 +220,10 @@ async function initDatePage() {
   setDatePageLoading(true);
   showGlobalLoading("同步報名資料...");
   try {
+    loadCachedControlConfig();
+    ensureLiffIdentityReady(false)
+      .catch((error) => console.warn("LIFF identity background init failed:", error));
+
     await loadControlConfig(false);
 
     if (!state.dateSet.has(date)) {
@@ -821,8 +835,15 @@ function markMemberLeave(memberId) {
 }
 
 async function loadControlConfig(forceReload) {
-  const data = await callApi({ action: "config" });
-  applyConfigData(data);
+  const hadCachedConfig = !forceReload && loadCachedControlConfig();
+  try {
+    const data = await callApi({ action: "config" });
+    applyConfigData(data);
+    saveControlConfigCache(data);
+  } catch (error) {
+    if (!hadCachedConfig) throw error;
+    console.warn("Control config refresh failed; using cached data:", error);
+  }
 }
 
 function applyConfigData(data) {
@@ -847,6 +868,30 @@ function applyConfigData(data) {
 
   state.policy = data.policy || state.policy;
   state.dateSet = new Set(state.availableDates.map((d) => d.date));
+}
+
+function loadCachedControlConfig() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(CONTROL_CONFIG_CACHE_KEY) || "{}");
+    if (!cached || !cached.savedAt || !cached.data) return false;
+    if (Date.now() - Number(cached.savedAt) > CONTROL_CONFIG_CACHE_TTL_MS) return false;
+    applyConfigData(cached.data);
+    return true;
+  } catch (error) {
+    console.warn("Control config cache read failed:", error);
+    return false;
+  }
+}
+
+function saveControlConfigCache(data) {
+  try {
+    localStorage.setItem(CONTROL_CONFIG_CACHE_KEY, JSON.stringify({
+      savedAt: Date.now(),
+      data
+    }));
+  } catch (error) {
+    console.warn("Control config cache write failed:", error);
+  }
 }
 
 function goToDatePage(date) {
