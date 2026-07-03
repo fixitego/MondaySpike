@@ -10,6 +10,7 @@ const LINE_IDENTITY_CACHE_KEY = "mondaySpike:lineIdentity";
 const CONTROL_CONFIG_CACHE_KEY = "mondaySpike:controlConfig";
 const CONTROL_CONFIG_CACHE_TTL_MS = 10 * 60 * 1000;
 const REFUND_RATE_CACHE_KEY = "mondaySpike:refundRate";
+const STATS_TAG_FILTER_CACHE_KEY = "mondaySpike:statsTagFilter";
 
 const state = {
   availableDates: [],
@@ -44,6 +45,7 @@ const state = {
 };
 
 let liffReadyPromise = null;
+let latestStatisticsRecords = [];
 let latestStatisticsPlayers = [];
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -141,11 +143,19 @@ function renderHomeMeta() {
 async function initStatsPage() {
   const refreshBtn = document.getElementById("refreshStatsBtn");
   const refundRateInput = document.getElementById("refundRateInput");
+  const statsTagFilter = document.getElementById("statsTagFilter");
   if (refundRateInput) {
     refundRateInput.value = localStorage.getItem(REFUND_RATE_CACHE_KEY) || "0";
     refundRateInput.addEventListener("input", () => {
       localStorage.setItem(REFUND_RATE_CACHE_KEY, refundRateInput.value || "0");
-      renderRefundTable(latestStatisticsPlayers);
+      renderFilteredStatistics();
+    });
+  }
+  if (statsTagFilter) {
+    statsTagFilter.value = localStorage.getItem(STATS_TAG_FILTER_CACHE_KEY) || "";
+    statsTagFilter.addEventListener("change", () => {
+      localStorage.setItem(STATS_TAG_FILTER_CACHE_KEY, statsTagFilter.value || "");
+      renderFilteredStatistics();
     });
   }
   if (refreshBtn) {
@@ -177,10 +187,13 @@ async function loadStatistics() {
 
   try {
     const data = await callApi({ action: "statistics" });
-    renderStatistics(data.records);
+    latestStatisticsRecords = Array.isArray(data.records) ? data.records : [];
     latestStatisticsPlayers = Array.isArray(data.players) ? data.players : [];
-    renderRefundTable(latestStatisticsPlayers);
+    renderStatsTagFilter(latestStatisticsRecords);
+    renderFilteredStatistics();
   } catch (err) {
+    latestStatisticsRecords = [];
+    latestStatisticsPlayers = [];
     list.innerHTML = "";
     renderRefundTable([]);
     if (error) {
@@ -188,6 +201,15 @@ async function loadStatistics() {
       error.textContent = `統計讀取失敗：${err.message}`;
     }
   }
+}
+
+function renderFilteredStatistics() {
+  const selectedTag = getSelectedStatsTag();
+  const records = selectedTag
+    ? latestStatisticsRecords.filter((row) => Array.isArray(row.tags) && row.tags.indexOf(selectedTag) >= 0)
+    : latestStatisticsRecords.slice();
+  renderStatistics(records);
+  renderRefundTable(buildRefundPlayersForRecords(records, latestStatisticsPlayers));
 }
 
 function renderStatistics(records) {
@@ -205,6 +227,7 @@ function renderStatistics(records) {
         <div>
           <span class="stats-date-label">${escapeHtml(row.label || row.date)}</span>
           <strong>${escapeHtml(row.date)}</strong>
+          ${buildTagChips(row.tags)}
         </div>
         <span class="stats-total">${Number(row.male || 0) + Number(row.female || 0)} 人</span>
       </header>
@@ -221,6 +244,34 @@ function renderStatistics(records) {
       </div>
     </article>
   `).join("");
+}
+
+function renderStatsTagFilter(records) {
+  const select = document.getElementById("statsTagFilter");
+  if (!select) return;
+  const previous = select.value || localStorage.getItem(STATS_TAG_FILTER_CACHE_KEY) || "";
+  const tags = [];
+  (Array.isArray(records) ? records : []).forEach((row) => {
+    (Array.isArray(row.tags) ? row.tags : []).forEach((tag) => {
+      if (tag && tags.indexOf(tag) < 0) tags.push(tag);
+    });
+  });
+  tags.sort((a, b) => String(a).localeCompare(String(b)));
+  select.innerHTML = `<option value="">全部日期</option>` + tags.map((tag) =>
+    `<option value="${escapeHtml(tag)}">${escapeHtml(tag)}</option>`
+  ).join("");
+  select.value = tags.indexOf(previous) >= 0 ? previous : "";
+  localStorage.setItem(STATS_TAG_FILTER_CACHE_KEY, select.value || "");
+}
+
+function getSelectedStatsTag() {
+  return String(document.getElementById("statsTagFilter")?.value || "").trim();
+}
+
+function buildTagChips(tags) {
+  const list = Array.isArray(tags) ? tags.filter(Boolean) : [];
+  if (!list.length) return "";
+  return `<div class="stats-tag-row">${list.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>`;
 }
 
 function buildStatsValue(label, value, type) {
@@ -291,6 +342,43 @@ function renderRefundTable(players) {
       <td>${formatMoney(refund)}</td>
     </tr>`;
   }).join("");
+}
+
+function buildRefundPlayersForRecords(records, basePlayers) {
+  const byId = {};
+  (Array.isArray(basePlayers) ? basePlayers : []).forEach((player) => {
+    const memberId = String(player.memberId || "").trim();
+    if (!memberId) return;
+    byId[memberId] = {
+      memberId,
+      name: String(player.name || "").trim(),
+      gender: String(player.gender || "").trim(),
+      leaveCount: 0,
+      leaveDates: []
+    };
+  });
+
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    (Array.isArray(record.leaveMembers) ? record.leaveMembers : []).forEach((leave) => {
+      const memberId = String(leave.memberId || "").trim();
+      if (!memberId) return;
+      if (!byId[memberId]) {
+        byId[memberId] = {
+          memberId,
+          name: String(leave.name || "").trim(),
+          gender: String(leave.gender || "").trim(),
+          leaveCount: 0,
+          leaveDates: []
+        };
+      }
+      byId[memberId].leaveCount += 1;
+      byId[memberId].leaveDates.push(record.date);
+    });
+  });
+
+  return Object.values(byId).sort((a, b) =>
+    Number(b.leaveCount || 0) - Number(a.leaveCount || 0) || String(a.name || "").localeCompare(String(b.name || ""))
+  );
 }
 
 function formatMoney(value) {
@@ -936,7 +1024,7 @@ function applyConfigData(data) {
       const date = String(row.date || "").trim();
       const label = String(row.label || row.date || "").trim();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-      return { date, label: label || date };
+      return { date, label: label || date, tags: Array.isArray(row.tags) ? row.tags : parseTags(row.tags) };
     })
     .filter(Boolean);
 
@@ -1036,6 +1124,7 @@ async function mockApi(params) {
       return {
         date: item.date,
         label: item.label,
+        tags: Array.isArray(item.tags) ? item.tags : parseTags(item.tags),
         fixedLeave: leaveIds.size,
         extraFilled,
         extraUnfilled: Math.max(0, extraTotal - extraFilled),
@@ -1180,7 +1269,11 @@ async function loadMockSeed() {
   const membersRows = parseCsvText(membersCsv);
 
   return {
-    availableDates: datesRows.filter((r) => isTruthyFlag(r.enabled)).map((r) => ({ date: r.date, label: r.label || r.date })),
+    availableDates: datesRows.filter((r) => isTruthyFlag(r.enabled)).map((r) => ({
+      date: r.date,
+      label: r.label || r.date,
+      tags: parseTags(r.tags)
+    })),
     fixedMembers: membersRows
       .filter((r) => isTruthyFlag(r.enabled))
       .map((r) => ({ memberId: r.memberId, name: r.memberName, gender: r.gender || "未填" }))
@@ -1204,6 +1297,14 @@ function parseCsvText(text) {
 function isTruthyFlag(value) {
   const v = String(value || "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "y";
+}
+
+function parseTags(value) {
+  return String(value || "")
+    .trim()
+    .split(/[\s,，、]+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
 }
 
 function mockExtraTypeWeight(type) {

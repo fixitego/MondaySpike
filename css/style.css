@@ -823,6 +823,23 @@ select:focus {
 .stats-card-head > div { display: grid; gap: 5px; }
 .stats-date-label { color: var(--muted); font-size: .68rem; font-weight: 800; }
 .stats-card-head strong { font-family: var(--font-display); font-size: 1.22rem; letter-spacing: -.03em; }
+.stats-tag-row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.stats-tag-row span {
+  width: fit-content;
+  border: 1px solid rgba(122,166,143,.34);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #9ccfb5;
+  background: rgba(122,166,143,.1);
+  font-size: .58rem;
+  font-weight: 800;
+}
+
 .stats-total {
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -912,6 +929,15 @@ select:focus {
 }
 
 .refund-rate-control input {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0 12px;
+  color: var(--text);
+  background: rgba(255,255,255,.05);
+}
+
+.refund-rate-control select {
   min-height: 40px;
   border: 1px solid var(--line);
   border-radius: 12px;

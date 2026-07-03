@@ -1431,6 +1431,7 @@ function getStatisticsReport() {
         extraUnfilled: 0,
         male: 0,
         female: 0,
+        tags: [],
         leaveMembers: [],
         extraSignups: []
       };
@@ -1440,7 +1441,10 @@ function getStatisticsReport() {
 
   for (var i = 1; i < dateRows.length; i += 1) {
     var dateItem = ensureDate(dateRows[i][0]);
-    if (dateItem) dateItem.label = normalize(dateRows[i][1]) || dateItem.date;
+    if (dateItem) {
+      dateItem.label = normalize(dateRows[i][1]) || dateItem.date;
+      dateItem.tags = parseTags(dateRows[i][3]);
+    }
   }
 
   var leaveSeen = {};
@@ -1663,9 +1667,10 @@ function getAvailableDates() {
     var date = normalize(rows[i][0]);
     var label = normalize(rows[i][1]);
     var enabled = normalize(rows[i][2]).toLowerCase();
+    var tags = parseTags(rows[i][3]);
     if (!isIsoDate(date)) continue;
     if (enabled && ['1', 'true', 'yes', 'y'].indexOf(enabled) < 0) continue;
-    result.push({ date: date, label: label || date });
+    result.push({ date: date, label: label || date, tags: tags });
     ensureSettlementRow(date);
   }
   return result;
@@ -1700,7 +1705,7 @@ function validateMemberExists(memberId) {
 }
 
 function bootstrapSheets() {
-  ensureSheet(DATES_SHEET, ['date', 'label', 'enabled'], [[todayPlus(0), '本週一', '1'], [todayPlus(7), '下週一', '1']]);
+  ensureSheet(DATES_SHEET, ['date', 'label', 'enabled', 'tags'], [[todayPlus(0), '本週一', '1', ''], [todayPlus(7), '下週一', '1', '']]);
   ensureSheet(MEMBERS_SHEET, ['memberId', 'memberName', 'gender', 'enabled'], [['M001', '王小明', '男', '1'], ['M002', '林小美', '女', '1']]);
   ensureSheet(LEAVE_SHEET, ['date', 'memberId', 'memberName', 'gender', 'status', 'createdAt', 'lineUserId', 'lineDisplayName']);
   ensureSheet(EXTRA_SHEET, [
@@ -1847,6 +1852,14 @@ function normalizeDateParts(year, month, day) {
 
 function isPastDate(date) {
   return normalize(date) < todayDateStr();
+}
+
+function parseTags(value) {
+  var text = normalize(value);
+  if (!text) return [];
+  return text.split(/[\s,，、]+/).map(function (tag) {
+    return normalize(tag);
+  }).filter(Boolean);
 }
 
 function normalize(value) {
