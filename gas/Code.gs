@@ -42,7 +42,8 @@ function doGet(e) {
     }
 
     if (action === 'statistics') {
-      return jsonOutput({ ok: true, records: getStatisticsReport() });
+      var report = getStatisticsReport();
+      return jsonOutput({ ok: true, records: report.records, players: report.players });
     }
 
     if (action === 'page_data') {
@@ -1403,7 +1404,19 @@ function getStatisticsReport() {
   var leaveRows = getSheet(LEAVE_SHEET).getDataRange().getDisplayValues();
   var extraRows = getSheet(EXTRA_SHEET).getDataRange().getDisplayValues();
   var finalRows = getSheet(FINAL_SHEET).getDataRange().getDisplayValues();
+  var fixedMembers = getFixedMembers();
   var byDate = {};
+  var playersById = {};
+
+  for (var f = 0; f < fixedMembers.length; f += 1) {
+    playersById[fixedMembers[f].memberId] = {
+      memberId: fixedMembers[f].memberId,
+      name: fixedMembers[f].name,
+      gender: fixedMembers[f].gender,
+      leaveCount: 0,
+      leaveDates: []
+    };
+  }
 
   function ensureDate(date) {
     var value = normalize(date);
@@ -1417,7 +1430,9 @@ function getStatisticsReport() {
         extraFilled: 0,
         extraUnfilled: 0,
         male: 0,
-        female: 0
+        female: 0,
+        leaveMembers: [],
+        extraSignups: []
       };
     }
     return byDate[value];
@@ -1437,13 +1452,55 @@ function getStatisticsReport() {
     if (leaveSeen[leaveKey]) continue;
     leaveSeen[leaveKey] = true;
     leaveItem.fixedLeave += 1;
+    var leaveName = normalize(leaveRows[j][2]);
+    var leaveGender = normalize(leaveRows[j][3]);
+    leaveItem.leaveMembers.push({
+      memberId: memberId,
+      name: leaveName,
+      gender: leaveGender,
+      createdAt: normalize(leaveRows[j][5])
+    });
+    if (!playersById[memberId]) {
+      playersById[memberId] = {
+        memberId: memberId,
+        name: leaveName,
+        gender: leaveGender,
+        leaveCount: 0,
+        leaveDates: []
+      };
+    }
+    playersById[memberId].leaveCount += 1;
+    playersById[memberId].leaveDates.push(leaveItem.date);
+  }
+
+  var filledStatusBySignupId = {};
+  for (var n = 1; n < finalRows.length; n += 1) {
+    var finalSignupId = normalize(finalRows[n][4]);
+    if (!finalSignupId) continue;
+    if (!filledStatusBySignupId[finalSignupId]) filledStatusBySignupId[finalSignupId] = { count: 0 };
+    filledStatusBySignupId[finalSignupId].count += 1;
   }
 
   for (var k = 1; k < extraRows.length; k += 1) {
     if (normalize(extraRows[k][7]) === '1') continue;
     var extraItem = ensureDate(extraRows[k][1]);
     if (!extraItem) continue;
-    extraItem.extraTotal += normalize(extraRows[k][2]).toUpperCase() === 'PAIR' ? 2 : 1;
+    var extraType = normalize(extraRows[k][2]).toUpperCase();
+    var extraSignupId = normalize(extraRows[k][0]);
+    var extraSeats = extraType === 'PAIR' ? 2 : 1;
+    var filledCount = filledStatusBySignupId[extraSignupId] ? filledStatusBySignupId[extraSignupId].count : 0;
+    extraItem.extraTotal += extraSeats;
+    extraItem.extraSignups.push({
+      signupId: extraSignupId,
+      type: extraType,
+      maleName: normalize(extraRows[k][3]),
+      femaleName: normalize(extraRows[k][4]),
+      note: normalize(extraRows[k][5]),
+      pairMustTogether: normalize(extraRows[k][6]),
+      createdAt: normalize(extraRows[k][8]),
+      isPaid: normalize(extraRows[k][12]) === '1',
+      status: filledCount <= 0 ? '候補' : extraType === 'PAIR' && filledCount < 2 ? '部分補上' : '已補上'
+    });
   }
 
   for (var m = 1; m < finalRows.length; m += 1) {
@@ -1468,7 +1525,22 @@ function getStatisticsReport() {
   result.sort(function (a, b) {
     return a.date > b.date ? -1 : a.date < b.date ? 1 : 0;
   });
-  return result;
+
+  var players = [];
+  for (var playerId in playersById) {
+    if (!playersById.hasOwnProperty(playerId)) continue;
+    playersById[playerId].leaveDates.sort();
+    players.push(playersById[playerId]);
+  }
+  players.sort(function (a, b) {
+    if (b.leaveCount !== a.leaveCount) return b.leaveCount - a.leaveCount;
+    return String(a.name).localeCompare(String(b.name));
+  });
+
+  return {
+    records: result,
+    players: players
+  };
 }
 
 function countFemale(rows) {

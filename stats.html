@@ -56,6 +56,26 @@
       <span><i class="legend-dot female"></i>女生</span>
     </section>
 
+    <section class="dashboard-card refund-card" aria-label="固打退費試算">
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="section-index">REFUND LEDGER</p>
+          <h2>固打退費試算</h2>
+          <p class="note">依固打請假次數計算，與臨打費用分開。</p>
+        </div>
+        <label class="refund-rate-control" for="refundRateInput">
+          <span>每次請假退費</span>
+          <input id="refundRateInput" type="number" min="0" step="1" inputmode="numeric" value="0" />
+        </label>
+      </div>
+      <div class="table-wrap refund-table-wrap">
+        <table>
+          <thead><tr><th>球員</th><th>性別</th><th>請假次數</th><th>請假日期</th><th>退費試算</th></tr></thead>
+          <tbody id="refundTableBody"><tr><td colspan="5">正在彙整...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
     <section id="statsList" class="stats-list" aria-live="polite">
       <article class="dashboard-card skeleton skeleton-card"></article>
       <article class="dashboard-card skeleton skeleton-card"></article>

@@ -9,6 +9,7 @@
 const LINE_IDENTITY_CACHE_KEY = "mondaySpike:lineIdentity";
 const CONTROL_CONFIG_CACHE_KEY = "mondaySpike:controlConfig";
 const CONTROL_CONFIG_CACHE_TTL_MS = 10 * 60 * 1000;
+const REFUND_RATE_CACHE_KEY = "mondaySpike:refundRate";
 
 const state = {
   availableDates: [],
@@ -43,6 +44,7 @@ const state = {
 };
 
 let liffReadyPromise = null;
+let latestStatisticsPlayers = [];
 
 document.addEventListener("DOMContentLoaded", () => {
   loadCachedLineIdentity();
@@ -138,6 +140,14 @@ function renderHomeMeta() {
 
 async function initStatsPage() {
   const refreshBtn = document.getElementById("refreshStatsBtn");
+  const refundRateInput = document.getElementById("refundRateInput");
+  if (refundRateInput) {
+    refundRateInput.value = localStorage.getItem(REFUND_RATE_CACHE_KEY) || "0";
+    refundRateInput.addEventListener("input", () => {
+      localStorage.setItem(REFUND_RATE_CACHE_KEY, refundRateInput.value || "0");
+      renderRefundTable(latestStatisticsPlayers);
+    });
+  }
   if (refreshBtn) {
     refreshBtn.addEventListener("click", async () => {
       refreshBtn.disabled = true;
@@ -168,8 +178,11 @@ async function loadStatistics() {
   try {
     const data = await callApi({ action: "statistics" });
     renderStatistics(data.records);
+    latestStatisticsPlayers = Array.isArray(data.players) ? data.players : [];
+    renderRefundTable(latestStatisticsPlayers);
   } catch (err) {
     list.innerHTML = "";
+    renderRefundTable([]);
     if (error) {
       error.hidden = false;
       error.textContent = `統計讀取失敗：${err.message}`;
@@ -202,6 +215,10 @@ function renderStatistics(records) {
         ${buildStatsValue("男生", row.male, "male")}
         ${buildStatsValue("女生", row.female, "female")}
       </div>
+      <div class="stats-detail-grid">
+        ${buildStatsDetail("固打請假", buildLeaveDetail(row.leaveMembers))}
+        ${buildStatsDetail("臨打報名", buildExtraSignupDetail(row.extraSignups))}
+      </div>
     </article>
   `).join("");
 }
@@ -211,6 +228,73 @@ function buildStatsValue(label, value, type) {
     <span>${escapeHtml(label)}</span>
     <strong>${Number(value || 0)}</strong>
   </div>`;
+}
+
+function buildStatsDetail(title, html) {
+  return `<div class="stats-detail">
+    <h3>${escapeHtml(title)}</h3>
+    ${html}
+  </div>`;
+}
+
+function buildLeaveDetail(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return `<p class="mini-empty">無</p>`;
+  return `<ul class="stats-name-list">${list.map((row) =>
+    `<li><strong>${escapeHtml(row.name || row.memberId || "")}</strong><span>${escapeHtml(row.gender || "")}</span></li>`
+  ).join("")}</ul>`;
+}
+
+function buildExtraSignupDetail(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return `<p class="mini-empty">無</p>`;
+  return `<ul class="stats-name-list">${list.map((row) => {
+    const type = String(row.type || "").toUpperCase();
+    const who = type === "MALE"
+      ? row.maleName
+      : type === "FEMALE"
+        ? row.femaleName
+        : `${row.maleName || ""} + ${row.femaleName || ""}`;
+    const paid = row.isPaid === true || row.isPaid === "1";
+    return `<li>
+      <strong>${escapeHtml(who || "")}</strong>
+      <span>${escapeHtml(buildExtraTypeLabel(type))} / ${escapeHtml(row.status || "候補")}${paid ? " / 已收費" : ""}</span>
+    </li>`;
+  }).join("")}</ul>`;
+}
+
+function buildExtraTypeLabel(type) {
+  if (type === "MALE") return "男";
+  if (type === "FEMALE") return "女";
+  if (type === "PAIR") return "一男一女";
+  return type || "未分類";
+}
+
+function renderRefundTable(players) {
+  const body = document.getElementById("refundTableBody");
+  if (!body) return;
+  const rows = Array.isArray(players) ? players : [];
+  const rate = Math.max(0, Number(document.getElementById("refundRateInput")?.value || 0));
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="5">目前沒有固打資料</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map((player) => {
+    const leaveCount = Number(player.leaveCount || 0);
+    const refund = leaveCount * rate;
+    const leaveDates = Array.isArray(player.leaveDates) ? player.leaveDates : [];
+    return `<tr>
+      <td>${escapeHtml(player.name || player.memberId || "")}<small>${escapeHtml(player.memberId || "")}</small></td>
+      <td>${escapeHtml(player.gender || "")}</td>
+      <td>${leaveCount}</td>
+      <td>${leaveDates.length ? escapeHtml(leaveDates.join("、")) : "無"}</td>
+      <td>${formatMoney(refund)}</td>
+    </tr>`;
+  }).join("");
+}
+
+function formatMoney(value) {
+  return `NT$ ${Number(value || 0).toLocaleString("zh-TW")}`;
 }
 
 async function initDatePage() {
@@ -948,18 +1032,45 @@ async function mockApi(params) {
       const extras = getMockExtras(item.date);
       const extraTotal = extras.reduce((sum, row) => sum + (row.type === "PAIR" ? 2 : 1), 0);
       const extraFilled = finalData.records.filter((row) => String(row.source || "").indexOf("臨打報名") === 0).length;
+      const leaveIds = getMockLeaves(item.date);
       return {
         date: item.date,
         label: item.label,
-        fixedLeave: getMockLeaves(item.date).size,
+        fixedLeave: leaveIds.size,
         extraFilled,
         extraUnfilled: Math.max(0, extraTotal - extraFilled),
         male: finalData.records.filter((row) => row.gender === "男").length,
-        female: finalData.records.filter((row) => row.gender === "女").length
+        female: finalData.records.filter((row) => row.gender === "女").length,
+        leaveMembers: mock.fixedMembers
+          .filter((member) => leaveIds.has(member.memberId))
+          .map((member) => ({ memberId: member.memberId, name: member.name, gender: member.gender })),
+        extraSignups: extras.map((row) => ({
+          signupId: row.signupId,
+          type: row.type,
+          maleName: row.maleName,
+          femaleName: row.femaleName,
+          note: row.note,
+          pairMustTogether: row.pairMustTogether,
+          isPaid: row.isPaid,
+          status: finalData.records.some((record) => record.signupId === row.signupId) ? "已補上" : "候補"
+        }))
       };
     }));
     records.sort((a, b) => String(b.date).localeCompare(String(a.date)));
-    return { ok: true, records };
+    const players = mock.fixedMembers.map((member) => {
+      const leaveDates = records
+        .filter((row) => row.leaveMembers.some((leave) => leave.memberId === member.memberId))
+        .map((row) => row.date)
+        .sort();
+      return {
+        memberId: member.memberId,
+        name: member.name,
+        gender: member.gender,
+        leaveCount: leaveDates.length,
+        leaveDates
+      };
+    }).sort((a, b) => b.leaveCount - a.leaveCount || String(a.name).localeCompare(String(b.name)));
+    return { ok: true, records, players };
   }
 
   if (params.action === "final_list") {

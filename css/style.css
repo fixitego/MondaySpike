@@ -857,6 +857,80 @@ select:focus {
 .stats-value.male strong { color: #fcb045; }
 .stats-value.female strong { color: #e96ca4; }
 
+.stats-detail-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stats-detail {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255,255,255,.025);
+}
+
+.stats-detail h3 {
+  margin: 0 0 9px;
+  color: var(--muted-bright);
+  font-size: .72rem;
+}
+
+.stats-name-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stats-name-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: .72rem;
+}
+
+.stats-name-list strong { color: var(--text); font-size: .8rem; }
+.stats-name-list span { text-align: right; }
+.mini-empty { margin: 0; color: var(--muted); font-size: .72rem; }
+
+.refund-card {
+  margin-bottom: 14px;
+}
+
+.refund-rate-control {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 800;
+}
+
+.refund-rate-control input {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0 12px;
+  color: var(--text);
+  background: rgba(255,255,255,.05);
+}
+
+.refund-table-wrap table {
+  min-width: 760px;
+}
+
+.refund-table-wrap td small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: .64rem;
+}
+
 /* Date dashboard */
 .dashboard-shell { padding-top: 34px; }
 
@@ -1334,6 +1408,7 @@ tr.gender-female td:first-child { border-left: 2px solid rgba(255,126,219,.7); }
   .audit-card { grid-column: 1 / -1; }
   .metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .stats-card { grid-template-columns: 1fr; gap: 16px; }
+  .stats-detail-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 680px) {
@@ -1371,6 +1446,7 @@ tr.gender-female td:first-child { border-left: 2px solid rgba(255,126,219,.7); }
   .stats-hero { min-height: 210px; padding: 24px 20px; }
   .stats-values { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stats-value:last-child { grid-column: 1 / -1; }
+  .refund-rate-control { width: 100%; }
   .btn:not(.icon-btn) { min-height: 40px; padding: 8px 11px; font-size: .73rem; }
   .btn.mini { min-height: 31px; padding: 5px 8px; font-size: .64rem; }
 }
